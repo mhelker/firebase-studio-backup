@@ -46,3 +46,6 @@ firestore-debug.log
 src/lib/firebaseServiceAccount.jsonworkspace/env.local
 workspace/env.local
 src/lib/firebaseServiceAccount.json
+.env
+.env.local
+.env.example
