@@ -278,7 +278,7 @@ export default function BookingsPage() {
                     )}
                      {booking.status === 'awaiting_payment' && (
                         <div className="w-full flex flex-col sm:flex-row items-start sm:items-center gap-2">
-                           <Button asChild size="sm" className="bg-accent text-accent-foreground hover:bg-accent/90 flex-grow">
+                           <Button asChild size="sm" className="bg-accent hover:bg-accent/90 flex-grow">
                              <Link href={`/bookings/${booking.id}/pay`}>
                                 <CreditCard className="w-4 h-4 mr-2" />
                                 Confirm & Pay Now
@@ -416,3 +416,5 @@ export default function BookingsPage() {
     </div>
   );
 }
+
+    
