@@ -1,16 +1,18 @@
+
 "use client";
 
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { PerformerCard } from '@/components/performer-card';
 import type { Performer } from '@/types';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
-import { Search, X, AlertTriangle, PackageOpen } from 'lucide-react';
-import { collection, getDocs, query } from "firebase/firestore";
+import { Search, X, AlertTriangle, PackageOpen, Loader2 } from 'lucide-react';
+import { collection, getDocs, query, orderBy, limit } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { Skeleton } from '@/components/ui/skeleton';
 import { Card, CardContent, CardFooter, CardHeader } from "@/components/ui/card";
+import { searchPerformers } from '@/services/performer-service';
 
 // Helper for loading state
 const PerformersLoadingSkeleton = () => (
@@ -36,82 +38,67 @@ const PerformersLoadingSkeleton = () => (
 );
 
 export default function PerformersPage() {
-  const [allPerformers, setAllPerformers] = useState<Performer[]>([]);
+  const [performers, setPerformers] = useState<Performer[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [allTalentTypes, setAllTalentTypes] = useState<string[]>(['All']);
   
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedTalentType, setSelectedTalentType] = useState('All');
 
-  useEffect(() => {
-    const fetchPerformers = async () => {
+  const fetchTalentTypes = useCallback(async () => {
+    // Fetch all performers just once to populate the talent type dropdown.
+    // This is a trade-off for UI convenience vs. initial load.
+    try {
+        const performersCollection = collection(db, "performers");
+        const q = query(performersCollection, limit(100)); // Limit to prevent huge loads
+        const querySnapshot = await getDocs(q);
+        const types = new Set<string>();
+        querySnapshot.forEach(doc => {
+            const data = doc.data() as Performer;
+            (data.talentTypes || []).forEach(tt => types.add(tt));
+        });
+        setAllTalentTypes(['All', ...Array.from(types).sort()]);
+    } catch (err) {
+        console.error("Error fetching talent types:", err);
+        // Don't set a visible error, just fall back to a basic list.
+        setAllTalentTypes(['All', 'Music', 'Magic', 'Comedy', 'DJ']);
+    }
+  }, []);
+
+  const runSearch = useCallback(async () => {
       setIsLoading(true);
       setError(null);
       try {
-        const performersCollection = collection(db, "performers");
-        const q = query(performersCollection); // Fetch all performers
-        const querySnapshot = await getDocs(q);
-        const performersData = querySnapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data()
-        } as Performer));
-
-        // De-duplicate performers by name to prevent confusion from multiple entries.
-        const uniquePerformers = Array.from(
-          performersData.reduce((map, performer) => {
-            if (!map.has(performer.name)) {
-              map.set(performer.name, performer);
-            }
-            return map;
-          }, new Map<string, Performer>()).values()
-        );
-        
-        // Sort performers by rating on the client-side for robustness
-        uniquePerformers.sort((a, b) => (b.rating || 0) - (a.rating || 0));
-
-        setAllPerformers(uniquePerformers);
+        const results = await searchPerformers({
+          talentType: selectedTalentType,
+          searchTerm: searchTerm
+        });
+        setPerformers(results);
       } catch (err) {
         console.error("Error fetching performers:", err);
-        setError("Failed to load performers. Please ensure you have added performers to the Firestore 'performers' collection and check your Firestore security rules.");
+        setError("Failed to load performers. Please check your Firestore security rules and required indexes.");
       } finally {
         setIsLoading(false);
       }
-    };
-    fetchPerformers();
-  }, []);
+  }, [selectedTalentType, searchTerm]);
 
-  const allTalentTypes = useMemo(() => {
-    const types = new Set<string>();
-    allPerformers.forEach(p => (p.talentTypes || []).forEach(tt => types.add(tt)));
-    return ['All', ...Array.from(types).sort()];
-  }, [allPerformers]);
+  useEffect(() => {
+    fetchTalentTypes();
+  }, [fetchTalentTypes]);
 
-  const filteredPerformers = useMemo(() => {
-    return allPerformers.filter(performer => {
-      const matchesSearchTerm =
-        (performer.name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-        (performer.description || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-        (performer.talentTypes || []).some(tt => tt.toLowerCase().includes(searchTerm.toLowerCase()));
-      
-      const matchesTalentType =
-        selectedTalentType === 'All' || (performer.talentTypes || []).includes(selectedTalentType);
-      
-      return matchesSearchTerm && matchesTalentType;
-    });
-  }, [searchTerm, selectedTalentType, allPerformers]);
+  // Initial load and subsequent searches
+  useEffect(() => {
+    runSearch();
+  }, [runSearch]);
 
-  const handleSearchChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    setSearchTerm(event.target.value);
-  };
-
-  const handleTalentTypeChange = (value: string) => {
-    setSelectedTalentType(value);
-  };
 
   const handleClearFilters = () => {
     setSearchTerm('');
     setSelectedTalentType('All');
   };
+
+  const isFiltered = searchTerm || selectedTalentType !== 'All';
 
   return (
     <div className="space-y-8">
@@ -127,15 +114,14 @@ export default function PerformersPage() {
                 placeholder="e.g., Magician, Jazz Band" 
                 className="pl-10" 
                 value={searchTerm}
-                onChange={handleSearchChange}
-                disabled={isLoading}
+                onChange={(e) => setSearchTerm(e.target.value)}
               />
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-muted-foreground" />
             </div>
           </div>
           <div>
             <label htmlFor="talent-type" className="block text-sm font-medium text-foreground mb-1">Talent Type</label>
-            <Select value={selectedTalentType} onValueChange={handleTalentTypeChange} disabled={isLoading || allTalentTypes.length <= 1}>
+            <Select value={selectedTalentType} onValueChange={setSelectedTalentType} disabled={allTalentTypes.length <= 1}>
               <SelectTrigger id="talent-type">
                 <SelectValue placeholder="Select talent type" />
               </SelectTrigger>
@@ -147,7 +133,7 @@ export default function PerformersPage() {
             </Select>
           </div>
         </div>
-        {(searchTerm || selectedTalentType !== 'All') && (
+        {isFiltered && (
             <div className="flex justify-end mt-4">
                 <Button onClick={handleClearFilters} variant="ghost" size="sm">
                     <X className="mr-2 h-4 w-4" />
@@ -158,12 +144,12 @@ export default function PerformersPage() {
       </section>
 
       <section>
-        {isLoading && (
-          <>
-            <Skeleton className="h-8 w-1/2 mb-6" />
-            <PerformersLoadingSkeleton />
-          </>
-        )}
+        <h2 className="text-2xl font-headline font-semibold mb-6">
+          {isLoading ? 'Searching...' : `Available Performers (${performers.length})`}
+        </h2>
+
+        {isLoading && <PerformersLoadingSkeleton />}
+        
         {error && (
           <div className="text-center py-10 bg-destructive/10 text-destructive-foreground p-6 rounded-lg shadow">
             <AlertTriangle className="w-12 h-12 mx-auto mb-4 text-destructive" />
@@ -171,14 +157,12 @@ export default function PerformersPage() {
             <p className="mt-2">{error}</p>
           </div>
         )}
+
         {!isLoading && !error && (
           <>
-            <h2 className="text-2xl font-headline font-semibold mb-6">
-              {filteredPerformers.length > 0 ? `Available Performers (${filteredPerformers.length})` : 'Available Performers'}
-            </h2>
-            {filteredPerformers.length > 0 ? (
+            {performers.length > 0 ? (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-                {filteredPerformers.map((performer) => (
+                {performers.map((performer) => (
                   <PerformerCard key={performer.id} performer={performer} />
                 ))}
               </div>
@@ -186,7 +170,7 @@ export default function PerformersPage() {
               <div className="text-center py-10 bg-card rounded-lg shadow">
                 <PackageOpen className="w-16 h-16 mx-auto text-muted-foreground mb-4" />
                 <p className="text-xl text-muted-foreground">No performers match your criteria.</p>
-                <p className="mt-2">Try adjusting your search or talent type filter, or check back later!</p>
+                <p className="mt-2">Try adjusting your search or talent type filter.</p>
               </div>
             )}
           </>

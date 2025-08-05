@@ -3,55 +3,60 @@
 
 import { db } from '@/lib/firebase';
 import type { Performer } from '@/types';
-import { collection, getDocs, query, where, limit } from 'firebase/firestore';
+import { collection, getDocs, query, where, limit, orderBy, QueryConstraint } from 'firebase/firestore';
+
+interface SearchCriteria {
+    talentType?: string;
+    searchTerm?: string;
+}
 
 /**
- * Searches for performers in the Firestore database.
- * @param talentType The primary talent type to filter by. If 'All' or empty, fetches any performers.
+ * Searches for performers in the Firestore database with server-side filtering and sorting.
+ * @param criteria An object containing talentType and searchTerm.
  * @returns A promise that resolves to an array of Performer objects.
  */
-export async function searchPerformers(talentType: string): Promise<Performer[]> {
+export async function searchPerformers(criteria: SearchCriteria): Promise<Performer[]> {
   try {
     const performersCollection = collection(db, 'performers');
-    let q;
+    const constraints: QueryConstraint[] = [];
 
-    const normalizedTalentType = talentType.trim();
-
-    if (normalizedTalentType && normalizedTalentType.toLowerCase() !== 'any') {
-      // Create a query to find performers where the talentType is in their talentTypes array.
-      // Firestore requires an exact match for array-contains, so case sensitivity matters.
-      // A more robust solution would involve storing a lowercase version of talent types.
-      // For this prototype, we'll try to match the provided case.
-      q = query(
-        performersCollection,
-        where('talentTypes', 'array-contains', normalizedTalentType),
-        limit(10)
-      );
-    } else {
-      // If no specific talent type, just get a general list of performers.
-      q = query(performersCollection, limit(10));
-    }
-
-    const querySnapshot = await getDocs(q);
+    const { talentType, searchTerm } = criteria;
+    const normalizedTalentType = talentType?.trim();
     
-    if (querySnapshot.empty && normalizedTalentType && normalizedTalentType.toLowerCase() !== 'any') {
-        // As a fallback, try matching with the first letter capitalized, as that's a common input format.
-        const capitalizedTalentType = normalizedTalentType.charAt(0).toUpperCase() + normalizedTalentType.slice(1).toLowerCase();
-        const fallbackQuery = query(
-             performersCollection,
-            where('talentTypes', 'array-contains', capitalizedTalentType),
-            limit(10)
-        );
-        const fallbackSnapshot = await getDocs(fallbackQuery);
-        return fallbackSnapshot.docs.map(
-            (doc) => ({ id: doc.id, ...doc.data() }) as Performer
-        );
+    // Talent Type Filtering
+    if (normalizedTalentType && normalizedTalentType.toLowerCase() !== 'any') {
+        // To make search case-insensitive, we'd typically store a lowercase array.
+        // For this prototype, we'll try to match the exact string first.
+        constraints.push(where('talentTypes', 'array-contains', normalizedTalentType));
     }
+    
+    // IMPORTANT: Firestore does not support full-text search on its own.
+    // The query below can't effectively handle a general `searchTerm` across multiple fields.
+    // The best practice is to use a dedicated search service like Algolia or Elasticsearch.
+    // For this prototype, we will keep client-side filtering for the search term after an initial DB query.
+    // We will, however, add server-side sorting by rating.
+    constraints.push(orderBy('rating', 'desc'));
+    constraints.push(limit(50)); // Limit to a reasonable number for performance.
 
+    const q = query(performersCollection, ...constraints);
+    const querySnapshot = await getDocs(q);
 
-    return querySnapshot.docs.map(
+    let performers = querySnapshot.docs.map(
       (doc) => ({ id: doc.id, ...doc.data() }) as Performer
     );
+
+    // Client-side filtering for search term (as a necessary workaround)
+    if (searchTerm) {
+        const lowercasedSearchTerm = searchTerm.toLowerCase();
+        performers = performers.filter(performer => {
+             return (performer.name || '').toLowerCase().includes(lowercasedSearchTerm) ||
+                    (performer.description || '').toLowerCase().includes(lowercasedSearchTerm) ||
+                    (performer.talentTypes || []).some(tt => tt.toLowerCase().includes(lowercasedSearchTerm));
+        });
+    }
+
+    return performers;
+
   } catch (error) {
     console.error("Error searching performers in Firestore:", error);
     // In case of an error (e.g., missing index), return an empty array
