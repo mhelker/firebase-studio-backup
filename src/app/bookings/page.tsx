@@ -60,7 +60,6 @@ export default function BookingsPage() {
     setError(null);
     try {
       const bookingsCollection = collection(db, "bookings");
-      // This is the key change: Query for bookings where userId matches the current user's UID.
       const q = query(bookingsCollection, where("userId", "==", user.uid));
       const bookingsSnapshot = await getDocs(q);
       
@@ -87,9 +86,10 @@ export default function BookingsPage() {
         if (status === 'completed' || status === 'cancelled') {
             past.push(booking);
         } else if (isPastDate && (status === 'confirmed' || status === 'awaiting_payment')) {
-            // Treat past, confirmed/paid bookings as completed for review purposes
+            // Treat past, but still somehow confirmed/paid bookings as completed for review purposes
             past.push({ ...booking, status: 'completed' });
         } else {
+            // All other statuses are upcoming
             upcoming.push(booking);
         }
       });
@@ -243,7 +243,7 @@ export default function BookingsPage() {
           {!isLoading && !error && upcomingBookings.length > 0 && (
             <div className="space-y-4">
               {upcomingBookings.map(booking => (
-                <Card key={booking.id} className={`bg-secondary/30 ${booking.status === 'cancelled' ? 'opacity-60' : ''}`}>
+                <Card key={booking.id} className="bg-secondary/30">
                   <CardHeader className="pb-2">
                     <CardTitle className="text-xl font-headline">Booking for: {booking.performerName}</CardTitle>
                     <CardDescription className="text-sm">
@@ -299,7 +299,6 @@ export default function BookingsPage() {
                             ) : booking.isVirtual ? (
                                 <div className="text-sm p-2 bg-background/50 rounded-md flex-grow">Awaiting meeting link from performer...</div>
                             ) : <div className="text-sm p-2 bg-green-50 border border-green-200 text-green-700 rounded-md flex-grow">Your booking is confirmed! The performer will see you on the scheduled date.</div>}
-                            <CancelBookingButton bookingId={booking.id} />
                          </div>
                     )}
                   </CardFooter>

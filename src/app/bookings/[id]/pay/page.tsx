@@ -8,16 +8,18 @@ import { db } from "@/lib/firebase";
 import type { Booking } from "@/types";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { CheckCircle, Loader2, AlertTriangle, CreditCard, Ban } from "lucide-react";
+import { CheckCircle, Loader2, AlertTriangle, CreditCard } from "lucide-react";
 import Link from "next/link";
 import { loadStripe } from "@stripe/stripe-js";
 import { Elements, PaymentElement, useStripe, useElements } from "@stripe/react-stripe-js";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/auth-context";
 
-const stripePromise = loadStripe(
-  process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY!
-);
+// Initialize Stripe outside of the component to avoid re-creating it on every render.
+// Ensure NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY is set in your .env file.
+const stripePromise = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY
+  ? loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY)
+  : null;
 
 function CheckoutForm({ booking, onPaymentSuccess }: { booking: Booking, onPaymentSuccess: () => void }) {
   const stripe = useStripe();
@@ -28,6 +30,7 @@ function CheckoutForm({ booking, onPaymentSuccess }: { booking: Booking, onPayme
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!stripe || !elements) {
+      toast({ title: "Payment system not ready.", variant: "destructive" });
       return;
     }
     setIsProcessing(true);
@@ -42,7 +45,7 @@ function CheckoutForm({ booking, onPaymentSuccess }: { booking: Booking, onPayme
         throw new Error(error.message || "An unexpected payment error occurred.");
       }
 
-      // If payment is successful, update booking status
+      // If payment is successful, update booking status to 'confirmed'
       const bookingRef = doc(db, "bookings", booking.id);
       await updateDoc(bookingRef, {
         status: "confirmed",
@@ -87,7 +90,6 @@ export default function BookingPaymentPage() {
   const router = useRouter();
   const params = useParams();
   const { user, loading: authLoading } = useAuth();
-  const { toast } = useToast();
   
   const [booking, setBooking] = useState<Booking | null>(null);
   const [clientSecret, setClientSecret] = useState<string | null>(null);
@@ -95,18 +97,20 @@ export default function BookingPaymentPage() {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
+    if (!stripePromise) {
+      setError("Stripe is not configured. Please add NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY to your .env file and restart the server.");
+      setIsLoading(false);
+    }
+
     const fetchBookingAndIntent = async () => {
-      if (!params.id || !user) return;
+      if (!params.id || !user || !stripePromise) return;
       setIsLoading(true);
 
       try {
-        // Fetch booking details
         const bookingRef = doc(db, "bookings", params.id as string);
         const bookingSnap = await getDoc(bookingRef);
 
-        if (!bookingSnap.exists()) {
-          throw new Error("Booking not found.");
-        }
+        if (!bookingSnap.exists()) throw new Error("Booking not found.");
         
         const bookingData = { id: bookingSnap.id, ...bookingSnap.data() } as Booking;
         
@@ -115,7 +119,7 @@ export default function BookingPaymentPage() {
         }
         
         if (bookingData.status !== 'awaiting_payment') {
-            setError(`This booking is already ${bookingData.status}.`);
+            setError(`This booking cannot be paid for. Its status is: ${bookingData.status}.`);
             setBooking(bookingData);
             setIsLoading(false);
             return;
@@ -123,20 +127,18 @@ export default function BookingPaymentPage() {
         
         setBooking(bookingData);
 
-        // Create Payment Intent
         const response = await fetch('/api/create-payment-intent', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ amount: bookingData.pricePerHour }),
+          body: JSON.stringify({ amount: bookingData.pricePerHour, bookingId: bookingData.id }),
         });
 
+        const result = await response.json();
         if (!response.ok) {
-          const { error } = await response.json();
-          throw new Error(error || 'Failed to create payment intent.');
+          throw new Error(result.error || 'Failed to create payment intent.');
         }
 
-        const { clientSecret: newClientSecret } = await response.json();
-        setClientSecret(newClientSecret);
+        setClientSecret(result.clientSecret);
 
       } catch (err: any) {
         console.error("Error fetching booking or creating intent:", err);
@@ -211,7 +213,7 @@ export default function BookingPaymentPage() {
     );
   }
   
-  if (!booking || !clientSecret) {
+  if (!booking || !clientSecret || !stripePromise) {
       return (
         <main className="max-w-md mx-auto p-6 text-center">
             <p>Could not initialize payment details. Please try again.</p>
