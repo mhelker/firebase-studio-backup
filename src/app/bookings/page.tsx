@@ -18,7 +18,6 @@ import {
   DialogDescription,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "@/components/ui/dialog"
 import { ReviewAndTipForm } from "@/components/review-and-tip-form";
 import { useRouter } from "next/navigation";
@@ -41,8 +40,9 @@ export default function BookingsPage() {
     setError(null);
     try {
       const bookingsCollection = collection(db, "bookings");
-      // Order by creation date to get a stable, predictable order
-      const q = query(bookingsCollection, where("userId", "==", user.uid), orderBy("createdAt", "desc"));
+      // A simplified query to avoid needing a composite index immediately.
+      // Filtering and sorting will be handled client-side, which is fine for a user's own bookings.
+      const q = query(bookingsCollection, where("userId", "==", user.uid));
       const bookingsSnapshot = await getDocs(q);
       
       const userBookings = bookingsSnapshot.docs.map(doc => ({
@@ -50,14 +50,18 @@ export default function BookingsPage() {
         ...doc.data()
       } as Booking));
 
+      // Sort by creation date client-side
+      userBookings.sort((a, b) => (b.createdAt?.toMillis() || 0) - (a.createdAt?.toMillis() || 0));
+
       setBookings(userBookings);
 
     } catch (err: any) {
       console.error("Error fetching bookings:", err);
-      if (err.message && err.message.includes('permission-denied') || err.message.includes('firestore/permission-denied')) {
+      // More specific error handling for missing indexes
+      if (err.code === 'failed-precondition') {
+          setError("A Firestore index is required for this query. Please check the terminal logs for a link to create the index in the Firebase console.");
+      } else if (err.code === 'permission-denied') {
           setError("Permission denied. Please check your Firestore security rules. You may need to deploy them using the 'firebase deploy' command in your terminal.");
-      } else if (err.message && err.message.includes('ailed-precondition')) {
-          setError("A Firestore index is required for this query. Please check your Firebase console for an automatic index creation link for the 'bookings' collection.");
       } else {
           setError("Failed to load bookings. Please try again later.");
       }
@@ -80,16 +84,21 @@ export default function BookingsPage() {
     const now = new Date();
 
     bookings.forEach(booking => {
-      const bookingDate = booking.date?.toDate ? booking.date.toDate() : new Date(0);
-      const isPastDate = bookingDate < now;
-      
-      // A booking is considered "past" if it's completed, cancelled, or if its date has passed
-      // and it wasn't confirmed (e.g., pending or awaiting payment expired).
-      if (booking.status === 'completed' || booking.status === 'cancelled' || (isPastDate && booking.status !== 'confirmed')) {
-          past.push(booking);
-      } else {
-          // All other states (pending, awaiting_payment, confirmed) for future dates are upcoming.
-          upcoming.push(booking);
+      const isPastDate = booking.date ? booking.date.toDate() < now : false;
+
+      // Bookings that are 'completed' or 'cancelled' are always in the past.
+      if (booking.status === 'completed' || booking.status === 'cancelled') {
+        past.push(booking);
+      } 
+      // Bookings whose event date has passed should also be considered past events.
+      else if (isPastDate) {
+        // If it was confirmed, show it as 'completed' to allow review.
+        // Otherwise, it expired without action, so it's just a 'past' event.
+        past.push({ ...booking, status: booking.status === 'confirmed' ? 'completed' : booking.status });
+      }
+      // All others are upcoming or pending.
+      else {
+        upcoming.push(booking);
       }
     });
     
