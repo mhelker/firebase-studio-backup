@@ -377,7 +377,7 @@ export default function BookingsPage() {
                             <DialogTrigger asChild>
                                <Button variant="outline" size="sm">
                                 <Star className="w-4 h-4 mr-2" />
-                                Leave a Review & Tip
+                                Leave a Review
                                </Button>
                             </DialogTrigger>
                             <DialogContent>
