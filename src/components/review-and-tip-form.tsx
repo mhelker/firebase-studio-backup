@@ -62,13 +62,16 @@ function InnerReviewForm({
   onReviewSubmitted,
   bookingId,
   performerId,
-  isDemoMode
-}: ReviewAndTipFormProps & { isDemoMode: boolean }) {
+  isDemoMode,
+  clientSecret: initialClientSecret,
+}: ReviewAndTipFormProps & { isDemoMode: boolean, clientSecret: string | null }) {
   const { user } = useAuth();
   const { toast } = useToast();
   const [isProcessing, setIsProcessing] = useState(false);
   const stripe = useStripe();
   const elements = useElements();
+  const [clientSecret, setClientSecret] = useState(initialClientSecret);
+  const [isCreatingIntent, setIsCreatingIntent] = useState(false);
 
   const form = useForm<ReviewAndTipFormValues>({
     resolver: zodResolver(reviewAndTipSchema),
@@ -76,6 +79,31 @@ function InnerReviewForm({
   });
 
   const tipAmount = form.watch("tipAmount") || 0;
+
+  useEffect(() => {
+    // If the tip amount changes to be > 0 and we don't have a client secret yet,
+    // or if the tip amount becomes 0, we might need to create/clear the intent.
+    // This logic handles creating a new Payment Intent if the user decides to add a tip later.
+    const tipValue = form.getValues('tipAmount');
+    if (tipValue && tipValue > 0 && !clientSecret && !isDemoMode) {
+        setIsCreatingIntent(true);
+        createTipIntent({ bookingId, tipAmount: tipValue })
+            .then(intent => {
+                if (intent.clientSecret) {
+                    setClientSecret(intent.clientSecret);
+                } else if (intent.isDemoMode) {
+                    // This case should be handled by the parent, but as a fallback
+                    console.warn("Stripe is in demo mode, cannot create real intent.");
+                }
+            })
+            .catch(error => {
+                console.error("Could not create tip intent:", error);
+                toast({ title: "Payment Error", description: "Could not initialize the payment form.", variant: "destructive" });
+            })
+            .finally(() => setIsCreatingIntent(false));
+    }
+  }, [tipAmount, clientSecret, isDemoMode, bookingId, form, toast]);
+
 
   const handleFullSubmit = async (data: ReviewAndTipFormValues) => {
     if (!user) {
@@ -90,18 +118,25 @@ function InnerReviewForm({
     setIsProcessing(true);
     try {
       if (tipAmount > 0 && !isDemoMode) {
-        if (!stripe || !elements) {
-          throw new Error("Payment form not initialized.");
+        if (!stripe || !elements || !clientSecret) {
+          throw new Error("Payment form not ready. Please wait and try again.");
         }
+        // We need to fetch the latest intent based on the final amount
+         const finalIntent = await createTipIntent({ bookingId, tipAmount });
+         if (!finalIntent.clientSecret) throw new Error("Could not create final payment intent.");
+
         const { error: paymentError } = await stripe.confirmPayment({
           elements,
+          clientSecret: finalIntent.clientSecret,
           redirect: "if_required",
         });
+
         if (paymentError) {
           throw new Error(paymentError.message || "An unexpected payment error occurred.");
         }
       }
 
+      // Submit the review and tip amount (even if 0) to the backend
       const result = await submitReviewAndTip({
         bookingId,
         performerId,
@@ -124,7 +159,7 @@ function InnerReviewForm({
     }
   };
 
-  const isButtonDisabled = isProcessing || (tipAmount > 0 && !isDemoMode && (!stripe || !elements));
+  const isButtonDisabled = isProcessing || isCreatingIntent || (tipAmount > 0 && !isDemoMode && (!stripe || !elements));
 
   return (
     <Form {...form}>
@@ -217,11 +252,17 @@ function InnerReviewForm({
                 Stripe keys are not configured. Real payments are disabled. Add your `STRIPE_SECRET_KEY` to the `.env` file and restart the server to enable tipping.
               </AlertDescription>
             </Alert>
-          ) : (
+          ) : clientSecret ? (
             <div className="p-4 border rounded-md">
               <h4 className="font-semibold mb-2">Secure Tip Payment</h4>
-              <PaymentElement id="payment-element" />
+              <Elements stripe={stripePromise} options={{ clientSecret }} key={clientSecret}>
+                <PaymentElement id="payment-element" />
+              </Elements>
             </div>
+          ) : (
+             <div className="flex items-center justify-center p-4">
+                <Loader2 className="animate-spin mr-2" /> Loading payment form...
+             </div>
           )
         )}
 
@@ -244,59 +285,24 @@ function InnerReviewForm({
 export function ReviewAndTipForm(props: ReviewAndTipFormProps) {
   const [clientSecret, setClientSecret] = useState<string | null>(null);
   const [isDemoMode, setIsDemoMode] = useState(false);
-  const [isLoading, setIsLoading] = useState(true);
-  const { toast } = useToast();
+  const [isLoading, setIsLoading] = useState(false); // Only load if a tip is entered
+
+  // This component now only handles passing initial state.
+  // The InnerReviewForm handles the logic of creating intents.
 
   useEffect(() => {
-    // We only create an intent if the user wants to tip.
-    // For now, we create a placeholder intent to initialize Stripe Elements.
-    // A better approach might be to create the intent only when tipAmount > 0.
-    setIsLoading(true);
-    createTipIntent({ bookingId: props.bookingId, tipAmount: 1 })
-      .then((intent) => {
+    // Check for demo mode status on mount, in case Stripe isn't configured at all.
+    createTipIntent({ bookingId: props.bookingId, tipAmount: 0.01 }) // use a minimum amount to check status
+      .then(intent => {
           if (intent.isDemoMode) {
               setIsDemoMode(true);
-          } else {
-              setClientSecret(intent.clientSecret);
           }
       })
-      .catch((error) => {
-        console.error("Could not create tip intent:", error);
-        toast({
-          title: "Payment Error",
-          description: "Could not initialize the payment form. " + error.message,
-          variant: "destructive",
-        });
-      })
-      .finally(() => {
-          setIsLoading(false);
-      });
-  }, [props.bookingId, toast]);
-
-  if (isLoading) {
-    return (
-      <div className="flex flex-col items-center justify-center p-8">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
-        <p className="mt-2 text-muted-foreground">Initializing form...</p>
-      </div>
-    );
-  }
+      .catch(e => console.error("Could not check Stripe status:", e));
+  }, [props.bookingId]);
   
-  if (isDemoMode) {
-      return <InnerReviewForm {...props} isDemoMode={true} />;
-  }
-
-  if (!clientSecret) {
-    return (
-        <div className="flex flex-col items-center justify-center p-8 text-center">
-            <p className="text-destructive">Could not initialize payment form. Client secret is missing.</p>
-        </div>
-    );
-  }
 
   return (
-    <Elements stripe={stripePromise} options={{ clientSecret }} key={clientSecret}>
-      <InnerReviewForm {...props} isDemoMode={false} />
-    </Elements>
+    <InnerReviewForm {...props} isDemoMode={isDemoMode} clientSecret={clientSecret} />
   );
 }

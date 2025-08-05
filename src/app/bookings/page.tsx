@@ -1,24 +1,36 @@
 
 "use client";
 
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
-import { CalendarCheck, History, Loader2, PackageOpen, UserX, AlertTriangle } from "lucide-react";
+import { CalendarCheck, History, Loader2, PackageOpen, UserX, AlertTriangle, CreditCard, Star } from "lucide-react";
 import { useEffect, useState, useCallback } from "react";
-import { collection, query, getDocs, where } from "firebase/firestore";
+import { collection, query, getDocs, where, orderBy } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { format } from "date-fns";
 import { useAuth } from "@/contexts/auth-context";
 import type { Booking } from "@/types";
 import { Badge } from "@/components/ui/badge";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog"
+import { ReviewAndTipForm } from "@/components/review-and-tip-form";
+import { useRouter } from "next/navigation";
+
 
 export default function BookingsPage() {
   const { user, loading: authLoading } = useAuth();
-  const [upcomingBookings, setUpcomingBookings] = useState<Booking[]>([]);
-  const [pastBookings, setPastBookings] = useState<Booking[]>([]);
+  const [bookings, setBookings] = useState<Booking[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [reviewingBooking, setReviewingBooking] = useState<Booking | null>(null);
+  const router = useRouter();
 
   const fetchBookings = useCallback(async () => {
     if (!user) {
@@ -29,7 +41,8 @@ export default function BookingsPage() {
     setError(null);
     try {
       const bookingsCollection = collection(db, "bookings");
-      const q = query(bookingsCollection, where("userId", "==", user.uid), where("status", "!=", "cancelled"));
+      // Order by creation date to get a stable, predictable order
+      const q = query(bookingsCollection, where("userId", "==", user.uid), orderBy("createdAt", "desc"));
       const bookingsSnapshot = await getDocs(q);
       
       const userBookings = bookingsSnapshot.docs.map(doc => ({
@@ -37,31 +50,17 @@ export default function BookingsPage() {
         ...doc.data()
       } as Booking));
 
-      userBookings.sort((a, b) => {
-        const dateA = a.date?.toMillis() || 0;
-        const dateB = b.date?.toMillis() || 0;
-        return dateB - dateA;
-      });
-      
-      const upcoming: Booking[] = [];
-      const past: Booking[] = [];
-      const now = new Date();
-
-      userBookings.forEach(booking => {
-        const bookingDate = booking.date?.toDate ? booking.date.toDate() : new Date(0);
-        if (bookingDate < now || booking.status === 'completed') {
-            past.push(booking);
-        } else {
-            upcoming.push(booking);
-        }
-      });
-
-      setUpcomingBookings(upcoming.sort((a,b) => (a.date?.toMillis() || 0) - (b.date?.toMillis() || 0)));
-      setPastBookings(past);
+      setBookings(userBookings);
 
     } catch (err: any) {
       console.error("Error fetching bookings:", err);
-      setError("Failed to load bookings. Please try again later.");
+      if (err.message && err.message.includes('permission-denied') || err.message.includes('firestore/permission-denied')) {
+          setError("Permission denied. Please check your Firestore security rules. You may need to deploy them using the 'firebase deploy' command in your terminal.");
+      } else if (err.message && err.message.includes('ailed-precondition')) {
+          setError("A Firestore index is required for this query. Please check your Firebase console for an automatic index creation link for the 'bookings' collection.");
+      } else {
+          setError("Failed to load bookings. Please try again later.");
+      }
     } finally {
       setIsLoading(false);
     }
@@ -74,18 +73,38 @@ export default function BookingsPage() {
       setIsLoading(false);
     }
   }, [user, authLoading, fetchBookings]);
+  
+  const getCategorizedBookings = () => {
+    const upcoming: Booking[] = [];
+    const past: Booking[] = [];
+    const now = new Date();
 
-  const getStatusClass = (status: Booking['status']) => {
-    switch(status) {
-        case 'cancelled': return 'text-destructive';
-        case 'confirmed': return 'text-green-600';
-        case 'completed': return 'text-green-600';
-        case 'pending': return 'text-primary';
-        case 'awaiting_payment': return 'text-accent-foreground bg-accent/80 px-2 rounded';
-        default: return 'text-primary';
-    }
+    bookings.forEach(booking => {
+      const bookingDate = booking.date?.toDate ? booking.date.toDate() : new Date(0);
+      const isPastDate = bookingDate < now;
+      
+      // A booking is considered "past" if it's completed, cancelled, or if its date has passed
+      // and it wasn't confirmed (e.g., pending or awaiting payment expired).
+      if (booking.status === 'completed' || booking.status === 'cancelled' || (isPastDate && booking.status !== 'confirmed')) {
+          past.push(booking);
+      } else {
+          // All other states (pending, awaiting_payment, confirmed) for future dates are upcoming.
+          upcoming.push(booking);
+      }
+    });
+    
+    // Sort upcoming bookings by date ascending (soonest first)
+    upcoming.sort((a,b) => (a.date?.toMillis() || 0) - (b.date?.toMillis() || 0));
+
+    return { upcoming, past };
   }
 
+  const { upcoming, past } = getCategorizedBookings();
+  
+  const handleReviewSubmitted = () => {
+      setReviewingBooking(null);
+      fetchBookings(); // Re-fetch data to update the UI
+  }
 
   if (authLoading) {
     return (
@@ -120,8 +139,8 @@ export default function BookingsPage() {
       
       <Card className="shadow-lg">
         <CardHeader>
-          <CardTitle className="flex items-center"><CalendarCheck className="w-6 h-6 mr-2 text-primary" /> Upcoming Bookings</CardTitle>
-          <CardDescription>A simplified view of your scheduled performances.</CardDescription>
+          <CardTitle className="flex items-center"><CalendarCheck className="w-6 h-6 mr-2 text-primary" /> Upcoming & Pending Bookings</CardTitle>
+          <CardDescription>Performances you have requested or confirmed.</CardDescription>
         </CardHeader>
         <CardContent className="py-6">
           {isLoading && (
@@ -136,7 +155,7 @@ export default function BookingsPage() {
                 <p className="text-sm">{error}</p>
             </div>
           }
-          {!isLoading && !error && upcomingBookings.length === 0 && (
+          {!isLoading && !error && upcoming.length === 0 && (
             <div className="text-center py-10">
               <PackageOpen className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
               <p className="text-muted-foreground mb-4">You have no upcoming bookings.</p>
@@ -145,21 +164,35 @@ export default function BookingsPage() {
               </Button>
             </div>
           )}
-          {!isLoading && !error && upcomingBookings.length > 0 && (
+          {!isLoading && !error && upcoming.length > 0 && (
             <div className="space-y-4">
-              {upcomingBookings.map(booking => (
+              {upcoming.map(booking => (
                 <Card key={booking.id} className="bg-secondary/30">
-                  <CardHeader className="pb-2">
+                  <CardHeader>
                     <CardTitle className="text-xl font-headline">Booking for: {booking.performerName}</CardTitle>
                     <CardDescription className="text-sm">
-                      Status: <Badge variant={booking.status === 'confirmed' ? 'default' : 'secondary'} className={`${getStatusClass(booking.status)}`}>{booking.status ? booking.status.replace(/_/g, ' ') : 'N/A'}</Badge>
+                      Status: <Badge variant={booking.status === 'confirmed' ? 'default' : 'secondary'} className="capitalize">{booking.status ? booking.status.replace(/_/g, ' ') : 'N/A'}</Badge>
                     </CardDescription>
                   </CardHeader>
-                  <CardContent className="text-sm space-y-1 pt-2">
+                  <CardContent className="text-sm space-y-1">
                     <p><strong>Date:</strong> {booking.date && typeof booking.date.toDate === 'function' ? format(booking.date.toDate(), "PPP") : 'N/A'} at {booking.time}</p>
                     <p><strong>Location:</strong> {booking.location}</p>
                     <p><strong>Price:</strong> ${booking.pricePerHour.toFixed(2)}</p>
                   </CardContent>
+                   <CardFooter>
+                      {booking.status === 'awaiting_payment' && (
+                        <Button onClick={() => router.push(`/bookings/${booking.id}/pay`)} className="bg-accent hover:bg-accent/90 text-accent-foreground">
+                          <CreditCard className="w-4 h-4 mr-2" />
+                          Confirm & Pay Now
+                        </Button>
+                      )}
+                      {booking.status === 'pending' && (
+                          <p className="text-sm text-muted-foreground">Awaiting response from performer...</p>
+                      )}
+                       {booking.status === 'confirmed' && (
+                          <p className="text-sm text-green-600 font-semibold">This booking is confirmed! See you there.</p>
+                      )}
+                  </CardFooter>
                 </Card>
               ))}
             </div>
@@ -170,7 +203,7 @@ export default function BookingsPage() {
       <Card className="mt-8 shadow-lg">
         <CardHeader>
           <CardTitle className="flex items-center"><History className="w-6 h-6 mr-2 text-primary" /> Past Bookings</CardTitle>
-          <CardDescription>A simplified view of your performance history.</CardDescription>
+          <CardDescription>Your performance history.</CardDescription>
         </CardHeader>
         <CardContent className="py-6">
           {isLoading && (
@@ -179,32 +212,64 @@ export default function BookingsPage() {
               <p className="ml-2 text-muted-foreground">Loading past bookings...</p>
             </div>
           )}
-           {!isLoading && !error && pastBookings.length === 0 && (
+           {!isLoading && !error && past.length === 0 && (
             <div className="text-center py-10">
               <PackageOpen className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
               <p className="text-muted-foreground">No past bookings found.</p>
             </div>
           )}
-          {!isLoading && !error && pastBookings.length > 0 && (
+          {!isLoading && !error && past.length > 0 && (
             <div className="space-y-4">
-              {pastBookings.map(booking => (
-                 <Card key={booking.id} className="bg-card/80 opacity-70">
-                  <CardHeader className="pb-2">
+              {past.map(booking => (
+                 <Card key={booking.id} className="bg-card/80 opacity-80">
+                  <CardHeader>
                     <CardTitle className="text-lg font-headline">Booking for: {booking.performerName}</CardTitle>
                      <CardDescription className="text-xs">
-                       Status: <Badge className={`${getStatusClass(booking.status)}`}>{booking.status ? booking.status.replace(/_/g, ' ') : 'N/A'}</Badge>
+                       Status: <Badge variant={booking.status === 'completed' ? 'default' : 'destructive'} className="capitalize">{booking.status ? booking.status.replace(/_/g, ' ') : 'N/A'}</Badge>
                     </CardDescription>
                   </CardHeader>
-                  <CardContent className="text-sm space-y-2 pt-2">
+                  <CardContent className="text-sm space-y-2">
                     <p><strong>Date:</strong> {booking.date && typeof booking.date.toDate === 'function' ? format(booking.date.toDate(), "PPP") : 'N/A'} at {booking.time}</p>
                     <p><strong>Price:</strong> ${booking.pricePerHour.toFixed(2)}</p>
+                    {booking.tipAmount && booking.tipAmount > 0 && (
+                        <p className="font-semibold"><strong>Tip Paid:</strong> ${booking.tipAmount.toFixed(2)}</p>
+                    )}
                   </CardContent>
+                  <CardFooter>
+                    {booking.status === 'completed' && !booking.customerReviewSubmitted && (
+                       <Button variant="outline" size="sm" onClick={() => setReviewingBooking(booking)}>
+                          <Star className="w-4 h-4 mr-2" />
+                          Leave a Review
+                       </Button>
+                    )}
+                     {booking.status === 'completed' && booking.customerReviewSubmitted && (
+                        <p className="text-sm text-green-600 font-semibold">Thank you for your review!</p>
+                     )}
+                  </CardFooter>
                 </Card>
               ))}
             </div>
           )}
         </CardContent>
       </Card>
+
+        {reviewingBooking && (
+             <Dialog open={!!reviewingBooking} onOpenChange={(isOpen) => !isOpen && setReviewingBooking(null)}>
+                <DialogContent>
+                    <DialogHeader>
+                        <DialogTitle>Review your experience with {reviewingBooking.performerName}</DialogTitle>
+                        <DialogDescription>
+                            Your feedback helps our community. You can also add an optional tip.
+                        </DialogDescription>
+                    </DialogHeader>
+                    <ReviewAndTipForm 
+                        bookingId={reviewingBooking.id}
+                        performerId={reviewingBooking.performerId}
+                        onReviewSubmitted={handleReviewSubmitted}
+                    />
+                </DialogContent>
+            </Dialog>
+        )}
     </div>
   );
 }
