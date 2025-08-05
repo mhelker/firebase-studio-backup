@@ -84,7 +84,7 @@ export default function BookingsPage() {
         const isPastDate = bookingDate < now;
         const status = booking.status || 'pending';
 
-        if (status === 'completed' || status === 'cancelled' || booking.customerReviewSubmitted) {
+        if (status === 'completed' || status === 'cancelled') {
             past.push(booking);
         } else if (isPastDate && (status === 'confirmed' || status === 'awaiting_payment')) {
             // Treat past, confirmed/paid bookings as completed for review purposes
@@ -366,39 +366,40 @@ export default function BookingsPage() {
                     )}
                      <p className="text-xs text-muted-foreground pt-2">Requested on: {booking.createdAt && typeof booking.createdAt.toDate === 'function' ? format(booking.createdAt.toDate(), "PPP p") : 'N/A'}</p>
                   </CardContent>
-                  {booking.status === 'completed' && (
+                  {booking.status === 'completed' && !booking.customerReviewSubmitted && (
                     <CardFooter className="pt-2 pb-4">
-                       {booking.customerReviewSubmitted ? (
-                            <div className="text-sm text-green-600 font-semibold p-2 bg-green-50 rounded-md border border-green-200 w-full text-center">
-                                Thank you for your review!
-                            </div>
-                        ) : (
-                          <Dialog open={reviewingBookingId === booking.id} onOpenChange={(isOpen) => setReviewingBookingId(isOpen ? booking.id : null)}>
-                            <DialogTrigger asChild>
-                               <Button variant="outline" size="sm">
-                                <Star className="w-4 h-4 mr-2" />
-                                Leave a Review
-                               </Button>
-                            </DialogTrigger>
-                            <DialogContent>
-                              <DialogHeader>
-                                <DialogTitle>Leave a review for {booking.performerName}</DialogTitle>
-                                <DialogDescription>
-                                  Your feedback helps other users. You can also leave an optional tip to show your appreciation!
-                                </DialogDescription>
-                              </DialogHeader>
-                              <ReviewAndTipForm
-                                performerId={booking.performerId}
-                                bookingId={booking.id}
-                                onReviewSubmitted={() => {
-                                  setReviewingBookingId(null);
-                                  fetchBookings();
-                                }}
-                              />
-                            </DialogContent>
-                          </Dialog>
-                        )}
+                      <Dialog open={reviewingBookingId === booking.id} onOpenChange={(isOpen) => setReviewingBookingId(isOpen ? booking.id : null)}>
+                        <DialogTrigger asChild>
+                            <Button variant="outline" size="sm">
+                            <Star className="w-4 h-4 mr-2" />
+                            Leave a Review
+                            </Button>
+                        </DialogTrigger>
+                        <DialogContent>
+                          <DialogHeader>
+                            <DialogTitle>Leave a review for {booking.performerName}</DialogTitle>
+                            <DialogDescription>
+                              Your feedback helps other users. You can also leave an optional tip to show your appreciation!
+                            </DialogDescription>
+                          </DialogHeader>
+                          <ReviewAndTipForm
+                            performerId={booking.performerId}
+                            bookingId={booking.id}
+                            onReviewSubmitted={() => {
+                              setReviewingBookingId(null);
+                              fetchBookings();
+                            }}
+                          />
+                        </DialogContent>
+                      </Dialog>
                     </CardFooter>
+                  )}
+                  {booking.customerReviewSubmitted && (
+                     <CardFooter className="pt-2 pb-4">
+                        <div className="text-sm text-green-600 font-semibold p-2 bg-green-50 rounded-md border border-green-200 w-full text-center">
+                            Thank you for your review!
+                        </div>
+                     </CardFooter>
                   )}
                 </Card>
               )})}
