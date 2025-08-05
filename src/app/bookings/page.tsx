@@ -77,12 +77,20 @@ export default function BookingsPage() {
       
       const upcoming: Booking[] = [];
       const past: Booking[] = [];
+      const now = new Date();
 
       userBookings.forEach(booking => {
-        if (booking.status && (booking.status === 'completed' || booking.status === 'cancelled')) {
-          past.push(booking);
+        const bookingDate = booking.date?.toDate ? booking.date.toDate() : new Date(0);
+        const isPastDate = bookingDate < now;
+        const status = booking.status || 'pending';
+
+        if (status === 'completed' || status === 'cancelled' || booking.customerReviewSubmitted) {
+            past.push(booking);
+        } else if (isPastDate && (status === 'confirmed' || status === 'awaiting_payment')) {
+            // Treat past, confirmed/paid bookings as completed for review purposes
+            past.push({ ...booking, status: 'completed' });
         } else {
-          upcoming.push(booking);
+            upcoming.push(booking);
         }
       });
 
@@ -408,3 +416,5 @@ export default function BookingsPage() {
     </div>
   );
 }
+
+    
