@@ -1,3 +1,4 @@
+
 "use client";
 
 import { Star } from 'lucide-react';
@@ -52,8 +53,8 @@ export function StarRating({
             size={size}
             className={cn(
               'transition-colors',
-              starValue <= currentRating ? 'text-accent fill-accent' : 'text-muted-foreground/50',
-              interactive ? 'cursor-pointer hover:text-accent/80' : ''
+              starValue <= currentRating ? 'text-yellow-400 fill-yellow-400' : 'text-muted-foreground/50',
+              interactive ? 'cursor-pointer hover:text-yellow-400/80' : ''
             )}
             onClick={() => handleStarClick(index)}
             onMouseEnter={() => handleMouseEnter(index)}
