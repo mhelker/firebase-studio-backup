@@ -1,9 +1,10 @@
+
 import { cert, getApp, getApps, AppOptions, initializeApp } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
 import { getAuth } from 'firebase-admin/auth';
 
 // ✅ Import service account from lib folder
-import serviceAccount from './firebaseServiceAccount.json'; // Correct path since it's in the same folder
+import serviceAccount from '../../firebaseServiceAccount.json';
 
 let adminApp;
 

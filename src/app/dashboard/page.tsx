@@ -30,7 +30,6 @@ import { PLATFORM_COMMISSION_RATE } from "@/lib/constants";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { CustomerReviewForm } from "@/components/customer-review-form";
-import { ReviewAndTipForm } from "@/components/review-and-tip-form";
 
 // A small component to handle updating the meeting link
 function MeetingLinkManager({ bookingId, initialLink }: { bookingId: string, initialLink?: string }) {
@@ -551,8 +550,6 @@ export default function DashboardPage() {
             )}
         </CardContent>
       </Card>
-
     </div>
   );
-
-    
+}

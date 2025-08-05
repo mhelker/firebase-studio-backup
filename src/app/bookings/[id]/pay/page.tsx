@@ -229,4 +229,3 @@ export default function PayForBookingPage({ params }: { params: { id: string } }
     </Card>
   );
 }
-
