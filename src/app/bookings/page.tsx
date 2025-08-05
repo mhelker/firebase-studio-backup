@@ -298,7 +298,7 @@ export default function BookingsPage() {
                                 </Button>
                             ) : booking.isVirtual ? (
                                 <div className="text-sm p-2 bg-background/50 rounded-md flex-grow">Awaiting meeting link from performer...</div>
-                            ) : null}
+                            ) : <div className="text-sm p-2 bg-green-50 border border-green-200 text-green-700 rounded-md flex-grow">Your booking is confirmed! The performer will see you on the scheduled date.</div>}
                             <CancelBookingButton bookingId={booking.id} />
                          </div>
                     )}

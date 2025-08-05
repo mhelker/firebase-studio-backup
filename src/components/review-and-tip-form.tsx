@@ -208,7 +208,7 @@ function InnerReviewForm({
           )}
         />
 
-        {tipAmount > 0 ? (
+        {tipAmount > 0 && (
           isDemoMode ? (
             <Alert variant="destructive">
               <AlertTriangle className="h-4 w-4" />
@@ -223,7 +223,7 @@ function InnerReviewForm({
               <PaymentElement id="payment-element" />
             </div>
           )
-        ) : null}
+        )}
 
         <Button type="submit" className="w-full" disabled={isButtonDisabled}>
           {isProcessing ? (
@@ -248,30 +248,29 @@ export function ReviewAndTipForm(props: ReviewAndTipFormProps) {
   const { toast } = useToast();
 
   useEffect(() => {
-    const key = props.bookingId;
+    // We only create an intent if the user wants to tip.
+    // For now, we create a placeholder intent to initialize Stripe Elements.
+    // A better approach might be to create the intent only when tipAmount > 0.
     setIsLoading(true);
-
-    if (key) {
-      createTipIntent({ bookingId: key, tipAmount: 1 })
-        .then((intent) => {
-            if (intent.isDemoMode) {
-                setIsDemoMode(true);
-            } else {
-                setClientSecret(intent.clientSecret);
-            }
-        })
-        .catch((error) => {
-          console.error("Could not create tip intent:", error);
-          toast({
-            title: "Payment Error",
-            description: "Could not initialize the payment form. " + error.message,
-            variant: "destructive",
-          });
-        })
-        .finally(() => {
-            setIsLoading(false);
+    createTipIntent({ bookingId: props.bookingId, tipAmount: 1 })
+      .then((intent) => {
+          if (intent.isDemoMode) {
+              setIsDemoMode(true);
+          } else {
+              setClientSecret(intent.clientSecret);
+          }
+      })
+      .catch((error) => {
+        console.error("Could not create tip intent:", error);
+        toast({
+          title: "Payment Error",
+          description: "Could not initialize the payment form. " + error.message,
+          variant: "destructive",
         });
-    }
+      })
+      .finally(() => {
+          setIsLoading(false);
+      });
   }, [props.bookingId, toast]);
 
   if (isLoading) {
@@ -283,7 +282,6 @@ export function ReviewAndTipForm(props: ReviewAndTipFormProps) {
     );
   }
   
-  // If we are in demo mode, we don't need the Elements provider.
   if (isDemoMode) {
       return <InnerReviewForm {...props} isDemoMode={true} />;
   }
@@ -297,7 +295,7 @@ export function ReviewAndTipForm(props: ReviewAndTipFormProps) {
   }
 
   return (
-    <Elements stripe={stripePromise} options={{ clientSecret }} key={props.bookingId}>
+    <Elements stripe={stripePromise} options={{ clientSecret }} key={clientSecret}>
       <InnerReviewForm {...props} isDemoMode={false} />
     </Elements>
   );
