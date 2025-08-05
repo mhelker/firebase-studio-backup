@@ -93,7 +93,9 @@ export default function BookingsPage() {
       console.error("Error fetching bookings:", err);
       let errorMessage = "Failed to load bookings. Please try again later.";
       if (err.code === 'permission-denied' || err.code === 'unauthenticated') {
-          errorMessage = "You don't have permission to view these bookings. Please ensure you have deployed the correct Firestore security rules and that they allow you to read your own bookings.";
+          errorMessage = "You don't have permission to view these bookings. Please ensure you have deployed the correct Firestore security rules (`firebase deploy --only firestore:rules`).";
+      } else if (err.code === 'unavailable') {
+          errorMessage = "Could not connect to the database. This might be due to incorrect Firebase configuration in `src/lib/firebase.ts` or a network issue. Please check your config and deploy the security rules.";
       }
       setError(errorMessage);
     } finally {
@@ -406,5 +408,3 @@ export default function BookingsPage() {
     </div>
   );
 }
-
-    
