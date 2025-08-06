@@ -20,37 +20,41 @@ async function getPerformersData(): Promise<{ performers: Performer[], error?: s
     }
     try {
         const performersCollection = collection(db, "performers");
-        const q = query(performersCollection, orderBy("rating", "desc"), limit(50));
+        // Limit the query to 8, which is the max we display.
+        const q = query(performersCollection, orderBy("rating", "desc"), limit(8));
         const querySnapshot = await getDocs(q);
         
-        const performers = querySnapshot.docs.map(doc => {
+        const performersMap = new Map<string, Performer>();
+        querySnapshot.docs.forEach(doc => {
             const data = doc.data();
-            // Manually build the performer object to ensure all data is serializable
-            const serializedPerformer: Performer = {
-                id: doc.id,
-                name: data.name || 'Unnamed Performer',
-                talentTypes: data.talentTypes || [],
-                description: data.description || '',
-                longDescription: data.longDescription || '',
-                pricePerHour: data.pricePerHour || 0,
-                availability: data.availability || [],
-                locationsServed: data.locationsServed || [],
-                imageUrl: data.imageUrl || '',
-                dataAiHint: data.dataAiHint || '',
-                rating: data.rating || 0,
-                reviewCount: data.reviewCount || 0,
-                contactEmail: data.contactEmail || '',
-                specialties: data.specialties || [],
-                youtubeVideoId: data.youtubeVideoId || '',
-                isFeatured: data.isFeatured || false,
-                bankAccountNumber: data.bankAccountNumber || "",
-                routingNumber: data.routingNumber || "",
-                // Safely serialize the timestamp.
-                createdAt: data.createdAt instanceof Timestamp ? data.createdAt.toDate().toISOString() : new Date().toISOString(),
-            };
-            return serializedPerformer;
+            // Ensure we only add unique performers by using their ID as a key.
+            if (!performersMap.has(doc.id)) {
+                const serializedPerformer: Performer = {
+                    id: doc.id,
+                    name: data.name || 'Unnamed Performer',
+                    talentTypes: data.talentTypes || [],
+                    description: data.description || '',
+                    longDescription: data.longDescription || '',
+                    pricePerHour: data.pricePerHour || 0,
+                    availability: data.availability || [],
+                    locationsServed: data.locationsServed || [],
+                    imageUrl: data.imageUrl || '',
+                    dataAiHint: data.dataAiHint || '',
+                    rating: data.rating || 0,
+                    reviewCount: data.reviewCount || 0,
+                    contactEmail: data.contactEmail || '',
+                    specialties: data.specialties || [],
+                    youtubeVideoId: data.youtubeVideoId || '',
+                    isFeatured: data.isFeatured || false,
+                    bankAccountNumber: data.bankAccountNumber || "",
+                    routingNumber: data.routingNumber || "",
+                    // Safely serialize the timestamp.
+                    createdAt: data.createdAt instanceof Timestamp ? data.createdAt.toDate().toISOString() : new Date().toISOString(),
+                };
+                performersMap.set(doc.id, serializedPerformer);
+            }
         });
-        return { performers };
+        return { performers: Array.from(performersMap.values()) };
     } catch (error: any) {
         console.error("Error fetching performers:", error);
         // This error will be shown on the page if Firestore access fails.
