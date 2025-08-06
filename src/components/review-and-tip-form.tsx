@@ -58,20 +58,21 @@ interface ReviewAndTipFormProps {
   onReviewSubmitted: () => void;
 }
 
+// The inner form now safely uses the Stripe hooks because its parent (`ReviewAndTipForm`)
+// will wrap it in the <Elements> provider.
 function InnerReviewForm({
   onReviewSubmitted,
   bookingId,
   performerId,
-  isDemoMode,
-  clientSecret: initialClientSecret,
-}: ReviewAndTipFormProps & { isDemoMode: boolean, clientSecret: string | null }) {
+}: ReviewAndTipFormProps) {
   const { user } = useAuth();
   const { toast } = useToast();
-  const [isProcessing, setIsProcessing] = useState(false);
   const stripe = useStripe();
   const elements = useElements();
-  const [clientSecret, setClientSecret] = useState(initialClientSecret);
-  const [isCreatingIntent, setIsCreatingIntent] = useState(false);
+
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [isDemoMode, setIsDemoMode] = useState(false);
+  const [clientSecret, setClientSecret] = useState<string | null>(null);
 
   const form = useForm<ReviewAndTipFormValues>({
     resolver: zodResolver(reviewAndTipSchema),
@@ -79,31 +80,34 @@ function InnerReviewForm({
   });
 
   const tipAmount = form.watch("tipAmount") || 0;
-
+  
+  // This effect checks for demo mode and creates the payment intent for the tip.
   useEffect(() => {
-    // If the tip amount changes to be > 0 and we don't have a client secret yet,
-    // or if the tip amount becomes 0, we might need to create/clear the intent.
-    // This logic handles creating a new Payment Intent if the user decides to add a tip later.
-    const tipValue = form.getValues('tipAmount');
-    if (tipValue && tipValue > 0 && !clientSecret && !isDemoMode) {
-        setIsCreatingIntent(true);
-        createTipIntent({ bookingId, tipAmount: tipValue })
-            .then(intent => {
-                if (intent.clientSecret) {
-                    setClientSecret(intent.clientSecret);
-                } else if (intent.isDemoMode) {
-                    // This case should be handled by the parent, but as a fallback
-                    console.warn("Stripe is in demo mode, cannot create real intent.");
-                }
-            })
-            .catch(error => {
-                console.error("Could not create tip intent:", error);
-                toast({ title: "Payment Error", description: "Could not initialize the payment form.", variant: "destructive" });
-            })
-            .finally(() => setIsCreatingIntent(false));
+    if (tipAmount <= 0) {
+      setClientSecret(null);
+      if (elements) {
+        // Clear any existing payment element when tip is removed
+        elements.getElement('payment')?.destroy();
+      }
+      return;
     }
-  }, [tipAmount, clientSecret, isDemoMode, bookingId, form, toast]);
 
+    createTipIntent({ bookingId, tipAmount })
+      .then(intent => {
+        if (intent.isDemoMode) {
+          setIsDemoMode(true);
+        }
+        if (intent.clientSecret) {
+          setClientSecret(intent.clientSecret);
+        } else if (!intent.isDemoMode) {
+           toast({ title: "Payment Error", description: "Could not initialize the payment form.", variant: "destructive" });
+        }
+      })
+      .catch(error => {
+        console.error("Could not create tip intent:", error);
+        toast({ title: "Payment Error", description: "Could not initialize the payment form.", variant: "destructive" });
+      });
+  }, [tipAmount, bookingId, toast, elements]);
 
   const handleFullSubmit = async (data: ReviewAndTipFormValues) => {
     if (!user) {
@@ -121,13 +125,8 @@ function InnerReviewForm({
         if (!stripe || !elements || !clientSecret) {
           throw new Error("Payment form not ready. Please wait and try again.");
         }
-        // We need to fetch the latest intent based on the final amount
-         const finalIntent = await createTipIntent({ bookingId, tipAmount });
-         if (!finalIntent.clientSecret) throw new Error("Could not create final payment intent.");
-
         const { error: paymentError } = await stripe.confirmPayment({
           elements,
-          clientSecret: finalIntent.clientSecret,
           redirect: "if_required",
         });
 
@@ -136,7 +135,6 @@ function InnerReviewForm({
         }
       }
 
-      // Submit the review and tip amount (even if 0) to the backend
       const result = await submitReviewAndTip({
         bookingId,
         performerId,
@@ -159,7 +157,7 @@ function InnerReviewForm({
     }
   };
 
-  const isButtonDisabled = isProcessing || isCreatingIntent || (tipAmount > 0 && !isDemoMode && (!stripe || !elements));
+  const isButtonDisabled = isProcessing || (tipAmount > 0 && !isDemoMode && !clientSecret);
 
   return (
     <Form {...form}>
@@ -255,9 +253,7 @@ function InnerReviewForm({
           ) : clientSecret ? (
             <div className="p-4 border rounded-md">
               <h4 className="font-semibold mb-2">Secure Tip Payment</h4>
-              <Elements stripe={stripePromise} options={{ clientSecret }} key={clientSecret}>
-                <PaymentElement id="payment-element" />
-              </Elements>
+              <PaymentElement id="payment-element" />
             </div>
           ) : (
              <div className="flex items-center justify-center p-4">
@@ -282,27 +278,11 @@ function InnerReviewForm({
   );
 }
 
+// This parent component now wraps the entire form in the <Elements> provider.
 export function ReviewAndTipForm(props: ReviewAndTipFormProps) {
-  const [clientSecret, setClientSecret] = useState<string | null>(null);
-  const [isDemoMode, setIsDemoMode] = useState(false);
-  const [isLoading, setIsLoading] = useState(false); // Only load if a tip is entered
-
-  // This component now only handles passing initial state.
-  // The InnerReviewForm handles the logic of creating intents.
-
-  useEffect(() => {
-    // Check for demo mode status on mount, in case Stripe isn't configured at all.
-    createTipIntent({ bookingId: props.bookingId, tipAmount: 0.01 }) // use a minimum amount to check status
-      .then(intent => {
-          if (intent.isDemoMode) {
-              setIsDemoMode(true);
-          }
-      })
-      .catch(e => console.error("Could not check Stripe status:", e));
-  }, [props.bookingId]);
-  
-
   return (
-    <InnerReviewForm {...props} isDemoMode={isDemoMode} clientSecret={clientSecret} />
+    <Elements stripe={stripePromise}>
+      <InnerReviewForm {...props} />
+    </Elements>
   );
 }
