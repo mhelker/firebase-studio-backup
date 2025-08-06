@@ -2,7 +2,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from 'react';
-import { notFound, useRouter } from 'next/navigation';
+import { notFound, useRouter, useParams } from 'next/navigation';
 import { doc, getDoc, updateDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { useAuth } from '@/contexts/auth-context';
@@ -84,8 +84,9 @@ function CheckoutForm({ booking, onPaymentSuccess }: { booking: Booking, onPayme
 }
 
 
-export default function PayForBookingPage({ params }: { params: { id: string } }) {
+export default function PayForBookingPage() {
   const { user, loading: authLoading } = useAuth();
+  const params = useParams<{ id: string }>();
   const [booking, setBooking] = useState<Booking | null>(null);
   const [clientSecret, setClientSecret] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -94,8 +95,15 @@ export default function PayForBookingPage({ params }: { params: { id: string } }
   const router = useRouter();
 
   const getBookingDetails = useCallback(async (uid: string) => {
+    const bookingId = params.id;
+    if (!bookingId) {
+        setError("Booking ID not found in the URL.");
+        setIsLoading(false);
+        return;
+    }
+
     try {
-      const bookingRef = doc(db, 'bookings', params.id);
+      const bookingRef = doc(db, 'bookings', bookingId);
       const bookingSnap = await getDoc(bookingRef);
 
       if (!bookingSnap.exists()) {
@@ -126,7 +134,7 @@ export default function PayForBookingPage({ params }: { params: { id: string } }
       if (!res.ok) {
           const { error: serverError } = await res.json();
           // Check for specific demo mode error
-          if (serverError.includes('not configured')) {
+          if (serverError && serverError.includes('not configured')) {
             setIsDemoMode(true);
             setError(serverError);
           } else {
