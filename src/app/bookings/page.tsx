@@ -86,8 +86,12 @@ export default function BookingsPage() {
     bookings.forEach(booking => {
       const isPastDate = booking.date ? booking.date.toDate() < now : false;
 
+      // Always treat bookings awaiting payment as upcoming and actionable.
+      if (booking.status === 'awaiting_payment') {
+          upcoming.push(booking);
+      }
       // Bookings that are 'completed' or 'cancelled' are always in the past.
-      if (booking.status === 'completed' || booking.status === 'cancelled') {
+      else if (booking.status === 'completed' || booking.status === 'cancelled') {
         past.push(booking);
       } 
       // Bookings whose event date has passed should also be considered past events.
@@ -179,7 +183,7 @@ export default function BookingsPage() {
                 <Card key={booking.id} className="bg-secondary/30">
                   <CardHeader>
                     <CardTitle className="text-xl font-headline">Booking for: {booking.performerName}</CardTitle>
-                    <CardDescription className="text-sm">
+                    <CardDescription>
                       Status: <Badge variant={booking.status === 'confirmed' ? 'default' : 'secondary'} className="capitalize">{booking.status ? booking.status.replace(/_/g, ' ') : 'N/A'}</Badge>
                     </CardDescription>
                   </CardHeader>
@@ -233,7 +237,7 @@ export default function BookingsPage() {
                  <Card key={booking.id} className="bg-card/80 opacity-80">
                   <CardHeader>
                     <CardTitle className="text-lg font-headline">Booking for: {booking.performerName}</CardTitle>
-                     <CardDescription className="text-xs">
+                     <CardDescription>
                        Status: <Badge variant={booking.status === 'completed' ? 'default' : 'destructive'} className="capitalize">{booking.status ? booking.status.replace(/_/g, ' ') : 'N/A'}</Badge>
                     </CardDescription>
                   </CardHeader>
