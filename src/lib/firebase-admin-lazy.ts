@@ -1,15 +1,8 @@
 
 'use server';
 
-/**
- * @deprecated Use `firebase-admin-lazy.ts` instead for on-demand initialization.
- * This file is kept for reference but may be removed in the future.
- * The eager initialization here can cause server startup errors if environment
- * variables are not immediately available.
- */
-
-import { cert, getApp, getApps, initializeApp, AppOptions, App } from 'firebase-admin/app';
-import { getFirestore } from 'firebase-admin/firestore';
+import { cert, getApp, initializeApp, AppOptions, App } from 'firebase-admin/app';
+import { getFirestore, FieldValue, Timestamp } from 'firebase-admin/firestore';
 import { getAuth } from 'firebase-admin/auth';
 
 let adminApp: App;
@@ -42,6 +35,6 @@ try {
 const db = getFirestore(adminApp);
 const auth = getAuth(adminApp);
 
-export { adminApp, db, auth };
+export { adminApp, db, auth, FieldValue, Timestamp };
 
     

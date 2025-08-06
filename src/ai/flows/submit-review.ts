@@ -4,9 +4,16 @@
 
 import { ai } from '@/ai/genkit';
 import { z } from 'genkit';
-import { db as firestore } from '@/lib/firebase-admin';
-import { FieldValue, Timestamp } from 'firebase-admin/firestore';
 import type { Performer } from '@/types';
+
+// Lazily import firebase-admin to prevent app crash on missing env var
+async function getAdminFirestore() {
+  if (!process.env.FIREBASE_SERVICE_ACCOUNT) {
+    return null;
+  }
+  const { db, FieldValue, Timestamp } = await import('@/lib/firebase-admin-lazy');
+  return { db, FieldValue, Timestamp };
+}
 
 function validateFirestoreId(id: string, label: string) {
   if (!id || typeof id !== 'string' || id.includes('/')) {
@@ -43,6 +50,16 @@ const submitReviewAndTipFlow = ai.defineFlow(
     outputSchema: SubmitReviewAndTipOutputSchema,
   },
   async (input) => {
+    const admin = await getAdminFirestore();
+    if (!admin) {
+      console.warn("Firebase Admin SDK not configured. Running in demo mode.");
+      return {
+        title: "Review Submitted (Demo Mode)",
+        description: "This is a demo. In a real app, your review would be saved. To enable this feature, configure your FIREBASE_SERVICE_ACCOUNT in the .env file."
+      };
+    }
+
+    const { db: firestore, FieldValue, Timestamp } = admin;
     const { bookingId, performerId, rating, comment, tipAmount, userId } = input;
 
     validateFirestoreId(bookingId, 'bookingId');
@@ -156,6 +173,16 @@ const submitPerformerReviewFlow = ai.defineFlow(
     outputSchema: SubmitReviewAndTipOutputSchema,
   },
   async (input) => {
+    const admin = await getAdminFirestore();
+    if (!admin) {
+      console.warn("Firebase Admin SDK not configured. Running in demo mode.");
+      return {
+        title: "Review Submitted (Demo Mode)",
+        description: "This is a demo. In a real app, your review would be saved. To enable this feature, configure your FIREBASE_SERVICE_ACCOUNT in the .env file."
+      };
+    }
+    
+    const { db: firestore, FieldValue, Timestamp } = admin;
     const { bookingId, customerId, rating, comment, userId: performerId } = input;
 
     validateFirestoreId(bookingId, 'bookingId');
@@ -247,3 +274,5 @@ const submitPerformerReviewFlow = ai.defineFlow(
     }
   }
 );
+
+    
