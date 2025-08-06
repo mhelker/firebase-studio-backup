@@ -20,7 +20,7 @@ async function getPerformersData(): Promise<{ performers: Performer[], error?: s
     }
     try {
         const performersCollection = collection(db, "performers");
-        const q = query(performersCollection, limit(50));
+        const q = query(performersCollection, orderBy("rating", "desc"), limit(50));
         const querySnapshot = await getDocs(q);
         
         const performers = querySnapshot.docs.map(doc => {
@@ -46,7 +46,7 @@ async function getPerformersData(): Promise<{ performers: Performer[], error?: s
                 bankAccountNumber: data.bankAccountNumber || "",
                 routingNumber: data.routingNumber || "",
                 // Safely serialize the timestamp.
-                createdAt: data.createdAt instanceof Timestamp ? data.createdAt.toDate().toISOString() : data.createdAt,
+                createdAt: data.createdAt instanceof Timestamp ? data.createdAt.toDate().toISOString() : new Date().toISOString(),
             };
             return serializedPerformer;
         });
@@ -78,7 +78,7 @@ async function getCustomersData(): Promise<{ customers: Customer[], error?: stri
                 rating: data.rating || 0,
                 reviewCount: data.reviewCount || 0,
                 imageUrl: data.imageUrl || '',
-                createdAt: data.createdAt instanceof Timestamp ? data.createdAt.toDate().toISOString() : data.createdAt,
+                createdAt: data.createdAt instanceof Timestamp ? data.createdAt.toDate().toISOString() : new Date().toISOString(),
             } as Customer;
         });
         return { customers };
@@ -103,31 +103,13 @@ export default async function HomePage() {
   const { performers: livePerformers, error: performersError } = await getPerformersData();
   const { customers: topCustomers, error: customersError } = await getCustomersData();
 
-  // De-duplicate performers from Firestore by name, keeping the first one found.
-  const uniqueLivePerformers = Array.from(
-    livePerformers.reduce((map, performer) => {
-      if (!map.has(performer.name)) {
-        map.set(performer.name, performer);
-      }
-      return map;
-    }, new Map<string, Performer>()).values()
-  );
-
   // Use mock data as a fallback if the live database is empty and there was no error fetching.
-  const useMockData = !performersError && uniqueLivePerformers.length === 0;
-  const allPerformers = useMockData ? mockPerformers : uniqueLivePerformers;
+  const useMockData = !performersError && livePerformers.length === 0;
+  const allPerformers = useMockData ? mockPerformers : livePerformers;
 
-  const featuredPerformers = allPerformers
-    .filter(p => p.isFeatured)
-    .slice(0, 4);
-
-  const topPerformers = [...allPerformers]
-    .sort((a, b) => (b.rating || 0) - (a.rating || 0))
-    .slice(0, 8);
+  const topPerformers = allPerformers.slice(0, 8);
     
-  const sortedTopCustomers = [...topCustomers]
-    .sort((a, b) => (b.rating || 0) - (a.rating || 0))
-    .slice(0, 8);
+  const sortedTopCustomers = [...topCustomers].sort((a, b) => (b.rating || 0) - (a.rating || 0)).slice(0, 8);
 
   const features = [
     { icon: <Search className="w-8 h-8 text-accent" />, title: "Discover Talent", description: "Find amazing performers for any occasion." },
@@ -228,20 +210,6 @@ export default async function HomePage() {
         )}
       </section>
 
-      {featuredPerformers.length > 0 && !performersError && (
-        <section id="featured-performers" className="py-12 bg-secondary/10 rounded-lg">
-            <h2 className="text-3xl font-headline font-semibold text-center mb-10 flex items-center justify-center">
-                <Award className="w-8 h-8 mr-3 text-accent" />
-                Featured Talents
-            </h2>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8">
-                {featuredPerformers.map((performer) => (
-                <PerformerCard key={performer.id} performer={performer} />
-                ))}
-            </div>
-        </section>
-      )}
-
       <section className="py-12 bg-secondary/30 rounded-lg">
         <div className="container mx-auto text-center">
           <h2 className="text-3xl font-headline font-semibold mb-4 text-primary">Are You a Performer?</h2>
@@ -261,6 +229,5 @@ export default async function HomePage() {
         </div>
     </div>
   );
-}
 
     
