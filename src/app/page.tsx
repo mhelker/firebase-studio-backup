@@ -20,8 +20,7 @@ async function getPerformersData(): Promise<{ performers: Performer[], error?: s
     }
     try {
         const performersCollection = collection(db, "performers");
-        // Limit the query to 8, which is the max we display.
-        const q = query(performersCollection, orderBy("rating", "desc"), limit(8));
+        const q = query(performersCollection, orderBy("rating", "desc"), limit(50));
         const querySnapshot = await getDocs(q);
         
         const performersMap = new Map<string, Performer>();
@@ -48,16 +47,30 @@ async function getPerformersData(): Promise<{ performers: Performer[], error?: s
                     isFeatured: data.isFeatured || false,
                     bankAccountNumber: data.bankAccountNumber || "",
                     routingNumber: data.routingNumber || "",
-                    // Safely serialize the timestamp.
                     createdAt: data.createdAt instanceof Timestamp ? data.createdAt.toDate().toISOString() : new Date().toISOString(),
                 };
                 performersMap.set(doc.id, serializedPerformer);
             }
         });
-        return { performers: Array.from(performersMap.values()) };
+        const allPerformers = Array.from(performersMap.values());
+
+        // Explicitly filter to ensure only one David Helker is shown.
+        const davidHelkerEntries = allPerformers.filter(p => p.name === 'David Helker');
+        const otherPerformers = allPerformers.filter(p => p.name !== 'David Helker');
+        
+        const finalPerformers = [...otherPerformers];
+        if (davidHelkerEntries.length > 0) {
+            // Add only the first David Helker entry found
+            finalPerformers.push(davidHelkerEntries[0]);
+        }
+        
+        // Re-sort by rating after filtering
+        finalPerformers.sort((a,b) => (b.rating || 0) - (a.rating || 0));
+
+        return { performers: finalPerformers };
+
     } catch (error: any) {
         console.error("Error fetching performers:", error);
-        // This error will be shown on the page if Firestore access fails.
         return { 
             performers: [], 
             error: "Could not load performers from the database. This is likely due to Firestore security rules. Please run `firebase deploy --only firestore:rules` in your terminal." 
