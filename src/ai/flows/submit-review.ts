@@ -1,4 +1,3 @@
-
 // src/ai/flows/submit-review.ts
 'use server';
 
@@ -31,15 +30,13 @@ const SubmitReviewAndTipInputSchema = z.object({
   tipAmount: z.number().min(0),
   userId: z.string(), // ✅ explicitly required
 });
-export type SubmitReviewAndTipInput = z.infer<typeof SubmitReviewAndTipInputSchema>;
 
 const SubmitReviewAndTipOutputSchema = z.object({
   title: z.string(),
   description: z.string(),
 });
-export type SubmitReviewAndTipOutput = z.infer<typeof SubmitReviewAndTipOutputSchema>;
 
-export async function submitReviewAndTip(input: SubmitReviewAndTipInput): Promise<SubmitReviewAndTipOutput> {
+export async function submitReviewAndTip(input: z.infer<typeof SubmitReviewAndTipInputSchema>): Promise<z.infer<typeof SubmitReviewAndTipOutputSchema>> {
   return submitReviewAndTipFlow(input);
 }
 
@@ -160,9 +157,8 @@ const SubmitPerformerReviewInputSchema = z.object({
   comment: z.string().min(10).max(500),
   userId: z.string(), // ✅ explicitly required for safety
 });
-export type SubmitPerformerReviewInput = z.infer<typeof SubmitPerformerReviewInputSchema>;
 
-export async function submitPerformerReview(input: SubmitPerformerReviewInput): Promise<SubmitReviewAndTipOutput> {
+export async function submitPerformerReview(input: z.infer<typeof SubmitPerformerReviewInputSchema>): Promise<z.infer<typeof SubmitReviewAndTipOutputSchema>> {
   return submitPerformerReviewFlow(input);
 }
 
@@ -274,5 +270,3 @@ const submitPerformerReviewFlow = ai.defineFlow(
     }
   }
 );
-
-    
