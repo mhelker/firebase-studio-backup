@@ -36,7 +36,28 @@ const nextConfig: NextConfig = {
       },
     ],
   },
-  output: 'export', // Static export mode
+  // Remove this line to disable static export mode:
+  // output: 'export',
+
+  webpack(config) {
+    // Add handlebars loader for .js files inside handlebars package
+    config.module.rules.push({
+      test: /\.js$/,
+      include: /node_modules\/handlebars/,
+      use: {
+        loader: 'handlebars-loader',
+      },
+    });
+
+    // Suppress require.extensions warning
+    config.ignoreWarnings = [
+      {
+        message: /require\.extensions is not supported by webpack/,
+      },
+    ];
+
+    return config;
+  },
 };
 
 export default nextConfig;

@@ -1,9 +1,0 @@
-Hello! If you can see this file, you have found the 'public' folder.
-
-This is where you should place static assets for your Next.js application, like images.
-
-For your profile picture:
-1. Upload your photo directly into THIS 'public' folder.
-2. Make sure the photo is named exactly: your-profile-photo.jpg
-
-The application has been updated to look for 'your-profile-photo.jpg' directly in this 'public' folder.
