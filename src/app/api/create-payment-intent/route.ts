@@ -7,12 +7,11 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
 });
 
 export async function POST(request: Request) {
+  console.log('Stripe Secret Key present:', !!process.env.STRIPE_SECRET_KEY);
+
   // Demo mode check for Stripe keys
   if (!process.env.STRIPE_SECRET_KEY || process.env.STRIPE_SECRET_KEY === 'your_stripe_secret_key_here') {
     console.warn("Stripe keys not found. Running create-payment-intent in demo mode.");
-    // In a real app, you might want more robust handling, but for demo, we can simulate success.
-    // However, the client-side will prevent real payment attempts.
-    // For the purpose of getting a client secret, we'll return an error if not configured.
     return NextResponse.json({ error: 'Stripe is not configured on the server.' }, { status: 500 });
   }
 
@@ -23,20 +22,15 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Invalid amount provided.' }, { status: 400 });
     }
     if (!bookingId) {
-        return NextResponse.json({ error: 'Booking ID is required.' }, { status: 400 });
+      return NextResponse.json({ error: 'Booking ID is required.' }, { status: 400 });
     }
 
     const paymentIntent = await stripe.paymentIntents.create({
-      amount: Math.round(amount * 100), // Amount in cents
+      amount: Math.round(amount * 100),
       currency: 'usd',
-      automatic_payment_methods: {
-        enabled: true,
-      },
+      automatic_payment_methods: { enabled: true },
       description: `Payment for booking #${bookingId}`,
-      metadata: {
-        bookingId,
-        type: 'booking_payment'
-      }
+      metadata: { bookingId, type: 'booking_payment' },
     });
 
     return NextResponse.json({ clientSecret: paymentIntent.client_secret });

@@ -17,7 +17,6 @@ import {
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { StarRating } from "@/components/star-rating";
-import { useState, useEffect } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/auth-context";
 import { Loader2, DollarSign, Info, AlertTriangle } from "lucide-react";
@@ -58,56 +57,35 @@ interface ReviewAndTipFormProps {
   onReviewSubmitted: () => void;
 }
 
-// The inner form now safely uses the Stripe hooks because its parent (`ReviewAndTipForm`)
-// will wrap it in the <Elements> provider.
 function InnerReviewForm({
   onReviewSubmitted,
   bookingId,
   performerId,
-}: ReviewAndTipFormProps) {
+  tipAmount,
+  setTipAmount,
+  clientSecret,
+  isDemoMode,
+}: ReviewAndTipFormProps & {
+  tipAmount: number;
+  setTipAmount: React.Dispatch<React.SetStateAction<number>>;
+  clientSecret: string | null;
+  isDemoMode: boolean;
+}) {
   const { user } = useAuth();
   const { toast } = useToast();
   const stripe = useStripe();
   const elements = useElements();
 
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [isDemoMode, setIsDemoMode] = useState(false);
-  const [clientSecret, setClientSecret] = useState<string | null>(null);
+  const [isProcessing, setIsProcessing] = React.useState(false);
 
   const form = useForm<ReviewAndTipFormValues>({
     resolver: zodResolver(reviewAndTipSchema),
     defaultValues: { rating: 0, comment: "", tipAmount: 0 },
   });
 
-  const tipAmount = form.watch("tipAmount") || 0;
-  
-  // This effect checks for demo mode and creates the payment intent for the tip.
-  useEffect(() => {
-    if (tipAmount <= 0) {
-      setClientSecret(null);
-      if (elements) {
-        // Clear any existing payment element when tip is removed
-        elements.getElement('payment')?.destroy();
-      }
-      return;
-    }
-
-    createTipIntent({ bookingId, tipAmount })
-      .then(intent => {
-        if (intent.isDemoMode) {
-          setIsDemoMode(true);
-        }
-        if (intent.clientSecret) {
-          setClientSecret(intent.clientSecret);
-        } else if (!intent.isDemoMode) {
-           toast({ title: "Payment Error", description: "Could not initialize the payment form.", variant: "destructive" });
-        }
-      })
-      .catch(error => {
-        console.error("Could not create tip intent:", error);
-        toast({ title: "Payment Error", description: "Could not initialize the payment form.", variant: "destructive" });
-      });
-  }, [tipAmount, bookingId, toast, elements]);
+  React.useEffect(() => {
+    form.setValue("tipAmount", tipAmount);
+  }, [tipAmount, form]);
 
   const handleFullSubmit = async (data: ReviewAndTipFormValues) => {
     if (!user) {
@@ -157,7 +135,8 @@ function InnerReviewForm({
     }
   };
 
-  const isButtonDisabled = isProcessing || (tipAmount > 0 && !isDemoMode && !clientSecret);
+  const isButtonDisabled =
+    isProcessing || (tipAmount > 0 && !isDemoMode && !clientSecret);
 
   return (
     <Form {...form}>
@@ -227,9 +206,10 @@ function InnerReviewForm({
                     step="1.00"
                     min="0"
                     {...field}
-                    value={field.value || ''}
+                    value={tipAmount}
                     onChange={(e) => {
                       const value = e.target.valueAsNumber;
+                      setTipAmount(isNaN(value) ? 0 : value);
                       field.onChange(isNaN(value) ? 0 : value);
                     }}
                     disabled={isProcessing}
@@ -256,9 +236,9 @@ function InnerReviewForm({
               <PaymentElement id="payment-element" />
             </div>
           ) : (
-             <div className="flex items-center justify-center p-4">
-                <Loader2 className="animate-spin mr-2" /> Loading payment form...
-             </div>
+            <div className="flex items-center justify-center p-4">
+              <Loader2 className="animate-spin mr-2" /> Loading payment form...
+            </div>
           )
         )}
 
@@ -268,9 +248,9 @@ function InnerReviewForm({
               <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Processing...
             </>
           ) : tipAmount > 0 ? (
-            `Submit Review & ${isDemoMode ? 'Simulate' : 'Pay'} $${tipAmount.toFixed(2)} Tip`
+            `Submit Review & ${isDemoMode ? "Simulate" : "Pay"} $${tipAmount.toFixed(2)} Tip`
           ) : (
-            'Submit Review'
+            "Submit Review"
           )}
         </Button>
       </form>
@@ -278,11 +258,61 @@ function InnerReviewForm({
   );
 }
 
-// This parent component now wraps the entire form in the <Elements> provider.
 export function ReviewAndTipForm(props: ReviewAndTipFormProps) {
+  const [tipAmount, setTipAmount] = React.useState(0);
+  const [clientSecret, setClientSecret] = React.useState<string | null>(null);
+  const [isDemoMode, setIsDemoMode] = React.useState(false);
+  const { toast } = useToast();
+
+  React.useEffect(() => {
+    if (tipAmount <= 0) {
+      setClientSecret(null);
+      return;
+    }
+
+    createTipIntent({ bookingId: props.bookingId, tipAmount })
+      .then((intent) => {
+        setIsDemoMode(intent.isDemoMode);
+        if (intent.clientSecret) {
+          setClientSecret(intent.clientSecret);
+        } else if (!intent.isDemoMode) {
+          toast({
+            title: "Payment Error",
+            description: "Could not initialize the payment form.",
+            variant: "destructive",
+          });
+          setClientSecret(null);
+        }
+      })
+      .catch((error) => {
+        console.error("Could not create tip intent:", error);
+        toast({
+          title: "Payment Error",
+          description: "Could not initialize the payment form.",
+          variant: "destructive",
+        });
+        setClientSecret(null);
+      });
+  }, [tipAmount, props.bookingId, toast]);
+
+  // Only render Elements if tipAmount is 0 or clientSecret is ready or demo mode
+  if (tipAmount > 0 && !clientSecret && !isDemoMode) {
+    return (
+      <div className="flex items-center justify-center p-4">
+        <Loader2 className="animate-spin mr-2" /> Loading payment form...
+      </div>
+    );
+  }
+
   return (
-    <Elements stripe={stripePromise}>
-      <InnerReviewForm {...props} />
+    <Elements stripe={stripePromise} options={clientSecret ? { clientSecret } : undefined}>
+      <InnerReviewForm
+        {...props}
+        tipAmount={tipAmount}
+        setTipAmount={setTipAmount}
+        clientSecret={clientSecret}
+        isDemoMode={isDemoMode}
+      />
     </Elements>
   );
 }
