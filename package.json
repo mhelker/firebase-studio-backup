@@ -3,13 +3,14 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "node --require dotenv/config ./node_modules/.bin/next dev --turbopack -p 9007",
-    "genkit:dev": "node --require dotenv/config ./node_modules/.bin/genkit start --port 4000 --tsx src/ai/dev.ts",
-    "genkit:watch": "node --require dotenv/config ./node_modules/.bin/genkit start --port 4000 --tsx --watch src/ai/dev.ts",
+    "dev": "next dev -p 9007",
+    "genkit:dev": "genkit start --port 4000 --tsx src/ai/dev.ts",
+    "genkit:watch": "genkit start --port 4000 --tsx --watch src/ai/dev.ts",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "export": "next export"
   },
   "dependencies": {
     "@genkit-ai/firebase": "1.15.2",
@@ -50,7 +51,7 @@
     "firebase-admin": "^12.2.0",
     "genkit": "1.15.2",
     "lucide-react": "^0.475.0",
-    "next": "15.2.3",
+    "next": "^15.4.6",
     "patch-package": "^8.0.0",
     "react": "^18.3.1",
     "react-day-picker": "^8.10.1",

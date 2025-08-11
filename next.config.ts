@@ -1,4 +1,3 @@
-
 import type { NextConfig } from 'next';
 
 const nextConfig: NextConfig = {
@@ -9,6 +8,7 @@ const nextConfig: NextConfig = {
     ignoreDuringBuilds: true,
   },
   images: {
+    unoptimized: true, // Disable image optimization for static export
     remotePatterns: [
       {
         protocol: 'https',
@@ -36,12 +36,7 @@ const nextConfig: NextConfig = {
       },
     ],
   },
-  experimental: {
-    allowedDevOrigins: [
-      "https://9007-firebase-studio-1748634183902.cluster-aj77uug3sjd4iut4ev6a4jbtf2.cloudworkstations.dev",
-      "http://localhost:9007",
-    ],
-  },
+  output: 'export', // Static export mode
 };
 
 export default nextConfig;
