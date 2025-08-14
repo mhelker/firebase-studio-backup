@@ -1,4 +1,4 @@
-'use server';
+
 
 import { cert, getApp, initializeApp, AppOptions, App } from 'firebase-admin/app';
 import { getFirestore, FieldValue, Timestamp } from 'firebase-admin/firestore';

@@ -6,7 +6,9 @@ import Stripe from 'stripe';
 
 const CreateTipIntentInputSchema = z.object({
   bookingId: z.string().describe("The ID of the booking this tip is for."),
-  tipAmount: z.number().positive().describe("The amount of the tip in dollars."),
+  // --- THE FIX IS HERE ---
+  // z.coerce.number() will automatically convert a string like "22.50" into the number 22.50
+  tipAmount: z.coerce.number().positive().describe("The amount of the tip in dollars."),
 });
 
 const CreateTipIntentOutputSchema = z.object({

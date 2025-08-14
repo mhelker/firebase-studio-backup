@@ -1,4 +1,4 @@
-'use client';
+"use client";
 
 import { useEffect, useState, useCallback } from "react";
 import { notFound, useRouter, useParams } from "next/navigation";
@@ -12,7 +12,7 @@ import {
   CardContent,
   CardDescription,
   CardHeader,
-  CardTitle
+  CardTitle,
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
@@ -21,7 +21,7 @@ import {
   Elements,
   PaymentElement,
   useStripe,
-  useElements
+  useElements,
 } from "@stripe/react-stripe-js";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
@@ -31,7 +31,7 @@ const stripePromise = loadStripe(
 
 function CheckoutForm({
   booking,
-  onPaymentSuccess
+  onPaymentSuccess,
 }: {
   booking: Booking;
   onPaymentSuccess: () => void;
@@ -40,7 +40,6 @@ function CheckoutForm({
   const elements = useElements();
   const [isProcessing, setIsProcessing] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const router = useRouter();
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -52,7 +51,7 @@ function CheckoutForm({
 
     const { error, paymentIntent } = await stripe.confirmPayment({
       elements,
-      redirect: "if_required"
+      redirect: "if_required",
     });
 
     if (error) {
@@ -69,7 +68,7 @@ function CheckoutForm({
       } catch (dbError) {
         console.error("Error updating booking status:", dbError);
         setErrorMessage(
-          "Payment was successful, but we couldn't update your booking. Please contact support."
+          "Payment succeeded but updating booking failed. Please contact support."
         );
       }
     }
@@ -81,17 +80,13 @@ function CheckoutForm({
     <form onSubmit={handleSubmit} className="space-y-6">
       <PaymentElement id="payment-element" />
       {errorMessage && (
-        <Alert variant="destructive">
+        <Alert variant="destructive" className="flex items-center space-x-2">
           <AlertTriangle className="h-4 w-4" />
           <AlertTitle>Payment Error</AlertTitle>
           <AlertDescription>{errorMessage}</AlertDescription>
         </Alert>
       )}
-      <Button
-        disabled={isProcessing || !stripe || !elements}
-        className="w-full"
-        type="submit"
-      >
+      <Button disabled={isProcessing || !stripe || !elements} className="w-full" type="submit">
         {isProcessing ? (
           <Loader2 className="animate-spin mr-2" />
         ) : (
@@ -128,11 +123,12 @@ export default function PayForBookingPage() {
 
         if (!bookingSnap.exists()) {
           notFound();
+          return;
         }
 
         const bookingData = {
           id: bookingSnap.id,
-          ...bookingSnap.data()
+          ...bookingSnap.data(),
         } as Booking;
 
         if (bookingData.userId !== uid) {
@@ -154,8 +150,8 @@ export default function PayForBookingPage() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             amount: bookingData.pricePerHour,
-            bookingId: bookingData.id
-          })
+            bookingId: bookingData.id,
+          }),
         });
 
         if (!res.ok) {
@@ -164,9 +160,7 @@ export default function PayForBookingPage() {
             setIsDemoMode(true);
             setError(serverError);
           } else {
-            throw new Error(
-              serverError || "Failed to create payment intent."
-            );
+            throw new Error(serverError || "Failed to create payment intent.");
           }
         } else {
           const { clientSecret: newClientSecret } = await res.json();
@@ -186,8 +180,7 @@ export default function PayForBookingPage() {
     if (!authLoading && user) {
       setIsLoading(true);
       getBookingDetails(user.uid);
-    }
-    if (!authLoading && !user) {
+    } else if (!authLoading && !user) {
       setIsLoading(false);
     }
   }, [user, authLoading, getBookingDetails]);
@@ -200,9 +193,7 @@ export default function PayForBookingPage() {
     return (
       <div className="flex justify-center items-center min-h-[calc(100vh-200px)]">
         <Loader2 className="h-12 w-12 animate-spin text-primary" />
-        <p className="ml-3 text-muted-foreground">
-          Loading payment details...
-        </p>
+        <p className="ml-3 text-muted-foreground">Loading payment details...</p>
       </div>
     );
   }
@@ -214,9 +205,7 @@ export default function PayForBookingPage() {
           <CardTitle>Login Required</CardTitle>
         </CardHeader>
         <CardContent>
-          <p className="text-muted-foreground">
-            You must be logged in to pay for a booking.
-          </p>
+          <p className="text-muted-foreground">You must be logged in to pay for a booking.</p>
           <Button asChild className="mt-4">
             <Link href="/login">Go to Login</Link>
           </Button>
@@ -234,9 +223,7 @@ export default function PayForBookingPage() {
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <p className="text-muted-foreground">
-            {error || "Could not load booking details."}
-          </p>
+          <p className="text-muted-foreground">{error || "Could not load booking details."}</p>
           <Button asChild className="mt-4">
             <Link href="/bookings">Back to My Bookings</Link>
           </Button>
@@ -250,28 +237,22 @@ export default function PayForBookingPage() {
       <CardHeader>
         <CardTitle>Confirm Your Booking</CardTitle>
         <CardDescription>
-          Complete your payment for the performance with{" "}
-          {booking.performerName}.
+          Complete your payment for the performance with {booking.performerName}.
         </CardDescription>
       </CardHeader>
       <CardContent>
         {isDemoMode ? (
-          <Alert variant="destructive">
+          <Alert variant="destructive" className="flex items-center space-x-2">
             <AlertTriangle className="h-4 w-4" />
             <AlertTitle>Stripe Demo Mode</AlertTitle>
             <AlertDescription>
-              {error} Real payments are disabled. To enable payments, add your
-              Stripe secret key to the `.env` file and restart the development
-              server.
+              {error} Real payments are disabled. To enable payments, add your Stripe secret key to the `.env` file and restart the development server.
             </AlertDescription>
           </Alert>
         ) : (
           clientSecret && (
             <Elements stripe={stripePromise} options={{ clientSecret }}>
-              <CheckoutForm
-                booking={booking}
-                onPaymentSuccess={onPaymentSuccess}
-              />
+              <CheckoutForm booking={booking} onPaymentSuccess={onPaymentSuccess} />
             </Elements>
           )
         )}

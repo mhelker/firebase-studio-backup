@@ -1,25 +1,8 @@
 
+// src/lib/mock-data.ts
 import type { Performer } from '@/types';
 
 export const mockPerformers: Performer[] = [
-  {
-    id: 'matthew-helker-mock',
-    name: 'Matthew Helker',
-    talentTypes: ['Musician', 'Singer', 'Songwriter'],
-    description: 'Acoustic artist with a soulful voice, perfect for intimate events.',
-    longDescription: 'Matthew Helker is a versatile musician and singer-songwriter known for his captivating acoustic performances. With a repertoire that spans genres and decades, he creates a warm and engaging atmosphere for any occasion.',
-    pricePerHour: 150,
-    availability: ['Weekends', 'Weekday Evenings'],
-    locationsServed: ['Anytown'],
-    imageUrl: 'https://i.imgur.com/UzvGnVw.jpeg',
-    dataAiHint: 'musician singer',
-    rating: 4.9,
-    reviewCount: 28,
-    contactEmail: 'matthew.helker@example.com',
-    specialties: ['Weddings', 'Private Parties', 'Cafes'],
-    youtubeVideoId: 'G4ESrkp3CFQ',
-    isFeatured: true,
-  },
   {
     id: 'zelda-fire-mock',
     name: 'Zelda the Fire Dancer',
