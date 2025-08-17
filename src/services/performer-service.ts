@@ -21,7 +21,7 @@ export async function searchPerformers(criteria: SearchCriteria): Promise<Perfor
     }
     
     constraints.push(orderBy('rating', 'desc'));
-    constraints.push(limit(50));
+    constraints.push(limit(15)); // Limit to a smaller number to conserve AI tokens.
 
     const q = query(performersCollection, ...constraints);
     const querySnapshot = await getDocs(q);

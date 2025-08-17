@@ -140,7 +140,7 @@ export default async function HomePage() {
             <Button size="lg" asChild className="bg-accent hover:bg-accent/90 text-accent-foreground">
               <Link href="/performers">Find Performers</Link>
             </Button>
-            <Button size="lg" variant="outline" className="border-primary-foreground text-primary-foreground hover:bg-primary-foreground hover:text-primary" asChild>
+            <Button size="lg" variant="secondary" asChild>
               <Link href="/recommendations">Get AI Picks</Link>
             </Button>
           </div>
