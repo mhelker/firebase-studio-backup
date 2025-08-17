@@ -1,7 +1,7 @@
 
 "use client";
 
-import * as React from "react";
+import React, { useState } from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
@@ -16,7 +16,6 @@ import {
 } from "@/components/ui/form";
 import { Textarea } from "@/components/ui/textarea";
 import { StarRating } from "@/components/star-rating";
-import { useState } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/auth-context";
 import { Loader2 } from "lucide-react";
@@ -24,7 +23,10 @@ import { submitPerformerReview } from "@/ai/flows/submit-review";
 
 const reviewSchema = z.object({
   rating: z.number().min(1, "Please select a rating.").max(5),
-  comment: z.string().min(10, "Comment must be at least 10 characters.").max(500, "Comment must be less than 500 characters."),
+  comment: z
+    .string()
+    .min(10, "Comment must be at least 10 characters.")
+    .max(500, "Comment must be less than 500 characters."),
 });
 
 type ReviewFormValues = z.infer<typeof reviewSchema>;
@@ -55,8 +57,12 @@ export function CustomerReviewForm({
       return;
     }
     if (!bookingId || !customerId) {
-        toast({ title: "Submission Error", description: "Missing Booking or Customer ID. Cannot submit review.", variant: "destructive" });
-        return;
+      toast({
+        title: "Submission Error",
+        description: "Missing Booking or Customer ID. Cannot submit review.",
+        variant: "destructive",
+      });
+      return;
     }
 
     setIsSubmitting(true);
@@ -66,19 +72,22 @@ export function CustomerReviewForm({
         customerId,
         rating: data.rating,
         comment: data.comment,
-        userId: user.uid, // ✅ add this
+        userId: user.uid,
       });
 
       toast({ title: result.title, description: result.description });
       onReviewSubmitted();
     } catch (error: any) {
       console.error("Error submitting performer review:", error);
-      toast({ title: "Submission Error", description: error.message || "An unexpected error occurred.", variant: "destructive" });
+      toast({
+        title: "Submission Error",
+        description: error.message || "An unexpected error occurred.",
+        variant: "destructive",
+      });
     } finally {
       setIsSubmitting(false);
     }
   };
-
 
   return (
     <Form {...form}>
@@ -91,12 +100,12 @@ export function CustomerReviewForm({
               <FormLabel>Your Rating of the Customer</FormLabel>
               <FormControl>
                 <div className="flex">
-                    <StarRating
-                        rating={field.value}
-                        interactive
-                        onRate={field.onChange}
-                        size={28}
-                    />
+                  <StarRating
+                    rating={field.value}
+                    interactive
+                    onRate={field.onChange}
+                    size={28}
+                  />
                 </div>
               </FormControl>
               <FormMessage />
@@ -110,7 +119,10 @@ export function CustomerReviewForm({
             <FormItem>
               <FormLabel>Your Comment</FormLabel>
               <FormControl>
-                <Textarea placeholder="How was your experience with this customer?" {...field} />
+                <Textarea
+                  placeholder="How was your experience with this customer?"
+                  {...field}
+                />
               </FormControl>
               <FormMessage />
             </FormItem>

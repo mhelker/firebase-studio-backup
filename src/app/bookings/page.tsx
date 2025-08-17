@@ -1,4 +1,3 @@
-
 "use client";
 
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card";
@@ -6,22 +5,19 @@ import { Button } from "@/components/ui/button";
 import Link from "next/link";
 import { CalendarCheck, History, Loader2, PackageOpen, UserX, AlertTriangle, CreditCard, Star } from "lucide-react";
 import { useEffect, useState, useCallback } from "react";
-import { collection, query, getDocs, where, orderBy } from "firebase/firestore";
+import { collection, query, getDocs, where } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { format } from "date-fns";
 import { useAuth } from "@/contexts/auth-context";
 import type { Booking } from "@/types";
 import { Badge } from "@/components/ui/badge";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog"
-import { ReviewAndTipForm } from "@/components/review-and-tip-form";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { loadStripe } from "@stripe/stripe-js";
+import { ReviewForm as ReviewAndTipForm } from "@/components/review-and-tip-form";
 import { useRouter } from "next/navigation";
 
+// Load Stripe with your public key
+const stripePromise = loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY || "");
 
 export default function BookingsPage() {
   const { user, loading: authLoading } = useAuth();
@@ -40,24 +36,19 @@ export default function BookingsPage() {
     setError(null);
     try {
       const bookingsCollection = collection(db, "bookings");
-      // A simplified query to avoid needing a composite index immediately.
-      // Filtering and sorting will be handled client-side, which is fine for a user's own bookings.
       const q = query(bookingsCollection, where("userId", "==", user.uid));
       const bookingsSnapshot = await getDocs(q);
-      
+
       const userBookings = bookingsSnapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
       } as Booking));
 
-      // Sort by creation date client-side
       userBookings.sort((a, b) => (b.createdAt?.toMillis() || 0) - (a.createdAt?.toMillis() || 0));
 
       setBookings(userBookings);
-
     } catch (err: any) {
       console.error("Error fetching bookings:", err);
-      // More specific error handling for missing indexes
       if (err.code === 'failed-precondition') {
           setError("A Firestore index is required for this query. Please check the terminal logs for a link to create the index in the Firebase console.");
       } else if (err.code === 'permission-denied') {
@@ -77,7 +68,7 @@ export default function BookingsPage() {
       setIsLoading(false);
     }
   }, [user, authLoading, fetchBookings]);
-  
+
   const getCategorizedBookings = () => {
     const upcoming: Booking[] = [];
     const past: Booking[] = [];
@@ -86,37 +77,27 @@ export default function BookingsPage() {
     bookings.forEach(booking => {
       const isPastDate = booking.date ? booking.date.toDate() < now : false;
 
-      // Always treat bookings awaiting payment as upcoming and actionable.
       if (booking.status === 'awaiting_payment') {
           upcoming.push(booking);
-      }
-      // Bookings that are 'completed' or 'cancelled' are always in the past.
-      else if (booking.status === 'completed' || booking.status === 'cancelled') {
+      } else if (booking.status === 'completed' || booking.status === 'cancelled') {
         past.push(booking);
-      } 
-      // Bookings whose event date has passed should also be considered past events.
-      else if (isPastDate) {
-        // If it was confirmed, show it as 'completed' to allow review.
-        // Otherwise, it expired without action, so it's just a 'past' event.
+      } else if (isPastDate) {
         past.push({ ...booking, status: booking.status === 'confirmed' ? 'completed' : booking.status });
-      }
-      // All others are upcoming or pending.
-      else {
+      } else {
         upcoming.push(booking);
       }
     });
-    
-    // Sort upcoming bookings by date ascending (soonest first)
+
     upcoming.sort((a,b) => (a.date?.toMillis() || 0) - (b.date?.toMillis() || 0));
 
     return { upcoming, past };
   }
 
   const { upcoming, past } = getCategorizedBookings();
-  
+
   const handleReviewSubmitted = () => {
       setReviewingBooking(null);
-      fetchBookings(); // Re-fetch data to update the UI
+      fetchBookings();
   }
 
   if (authLoading) {
@@ -149,7 +130,8 @@ export default function BookingsPage() {
   return (
     <div className="container mx-auto py-8">
       <h1 className="text-3xl font-headline font-semibold mb-8 text-primary">My Bookings</h1>
-      
+
+      {/* Upcoming bookings */}
       <Card className="shadow-lg">
         <CardHeader>
           <CardTitle className="flex items-center"><CalendarCheck className="w-6 h-6 mr-2 text-primary" /> Upcoming & Pending Bookings</CardTitle>
@@ -213,6 +195,7 @@ export default function BookingsPage() {
         </CardContent>
       </Card>
 
+      {/* Past bookings */}
       <Card className="mt-8 shadow-lg">
         <CardHeader>
           <CardTitle className="flex items-center"><History className="w-6 h-6 mr-2 text-primary" /> Past Bookings</CardTitle>
@@ -266,23 +249,28 @@ export default function BookingsPage() {
         </CardContent>
       </Card>
 
-        {reviewingBooking && (
-             <Dialog open={!!reviewingBooking} onOpenChange={(isOpen) => !isOpen && setReviewingBooking(null)}>
-                <DialogContent>
-                    <DialogHeader>
-                        <DialogTitle>Review your experience with {reviewingBooking.performerName}</DialogTitle>
-                        <DialogDescription>
-                            Your feedback helps our community. You can also add an optional tip.
-                        </DialogDescription>
-                    </DialogHeader>
-                    <ReviewAndTipForm 
-                        bookingId={reviewingBooking.id}
-                        performerId={reviewingBooking.performerId}
-                        onReviewSubmitted={handleReviewSubmitted}
-                    />
-                </DialogContent>
-            </Dialog>
-        )}
+      {/* Review & Tip Dialog */}
+      {reviewingBooking && (
+        <Dialog open={!!reviewingBooking} onOpenChange={(isOpen) => !isOpen && setReviewingBooking(null)}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Review your experience with {reviewingBooking.performerName}</DialogTitle>
+              <DialogDescription>
+                Your feedback helps our community. You can also add an optional tip.
+              </DialogDescription>
+            </DialogHeader>
+
+            {/* Use Gemini form directly, it handles its own <Elements> internally */}
+            <ReviewAndTipForm 
+              bookingId={reviewingBooking.id}
+              performerId={reviewingBooking.performerId}
+              performerName={reviewingBooking.performerName}
+              onReviewSubmitted={handleReviewSubmitted}
+            />
+
+          </DialogContent>
+        </Dialog>
+      )}
     </div>
   );
 }

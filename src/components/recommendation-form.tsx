@@ -78,7 +78,7 @@ export function RecommendationForm() {
     <div className="space-y-8">
       <Card className="shadow-lg">
         <CardHeader>
-            <CardTitle className="text-2xl font-headline flex items-center"><Sparkles className="w-6 h-6 mr-2 text-primary" /> AI Performer Recommendations</CardTitle>
+            <CardTitle className="text-2xl font-headline flex items-center"><Sparkles className="w-6 h-6 mr-2 text-accent" /> AI Performer Recommendations</CardTitle>
             <CardDescription>Tell us about your event, and our AI will search our platform for the perfect performers!</CardDescription>
         </CardHeader>
         <CardContent>

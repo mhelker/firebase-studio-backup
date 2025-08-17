@@ -1,51 +1,49 @@
-
 'use server';
 
 import { db } from '@/lib/firebase';
 import type { Performer } from '@/types';
-import { collection, getDocs, query, where, limit, orderBy, QueryConstraint } from 'firebase/firestore';
+import { collection, getDocs, query, where, limit, orderBy, QueryConstraint, Timestamp } from 'firebase/firestore'; // Import Timestamp
 
 interface SearchCriteria {
     talentType?: string;
     searchTerm?: string;
 }
 
-/**
- * Searches for performers in the Firestore database with server-side filtering and sorting.
- * @param criteria An object containing talentType and searchTerm.
- * @returns A promise that resolves to an array of Performer objects.
- */
 export async function searchPerformers(criteria: SearchCriteria): Promise<Performer[]> {
   try {
     const performersCollection = collection(db, 'performers');
     const constraints: QueryConstraint[] = [];
 
     const { talentType, searchTerm } = criteria;
-    const normalizedTalentType = talentType?.trim();
     
-    // Talent Type Filtering
-    if (normalizedTalentType && normalizedTalentType.toLowerCase() !== 'any') {
-        // To make search case-insensitive, we'd typically store a lowercase array.
-        // For this prototype, we'll try to match the exact string first.
-        constraints.push(where('talentTypes', 'array-contains', normalizedTalentType));
+    if (talentType && talentType !== 'All') {
+        constraints.push(where('talentTypes', 'array-contains', talentType));
     }
     
-    // IMPORTANT: Firestore does not support full-text search on its own.
-    // The query below can't effectively handle a general `searchTerm` across multiple fields.
-    // The best practice is to use a dedicated search service like Algolia or Elasticsearch.
-    // For this prototype, we will keep client-side filtering for the search term after an initial DB query.
-    // We will, however, add server-side sorting by rating.
     constraints.push(orderBy('rating', 'desc'));
-    constraints.push(limit(50)); // Limit to a reasonable number for performance.
+    constraints.push(limit(15)); // Limit to a smaller number to conserve AI tokens.
 
     const q = query(performersCollection, ...constraints);
     const querySnapshot = await getDocs(q);
 
-    let performers = querySnapshot.docs.map(
-      (doc) => ({ id: doc.id, ...doc.data() }) as Performer
-    );
+    // --- THE FIX IS HERE ---
+    // We will now manually process each document to ensure all data is "plain"
+    let performers = querySnapshot.docs.map((doc) => {
+      const data = doc.data();
+      
+      // Check if createdAt is a Firestore Timestamp and convert it
+      const createdAt = data.createdAt instanceof Timestamp 
+        ? data.createdAt.toDate().toISOString() 
+        : data.createdAt;
 
-    // Client-side filtering for search term (as a necessary workaround)
+      return { 
+        id: doc.id, 
+        ...data,
+        createdAt, // Overwrite the original createdAt with our plain string version
+      } as Performer;
+    });
+
+    // Client-side filtering for search term
     if (searchTerm) {
         const lowercasedSearchTerm = searchTerm.toLowerCase();
         performers = performers.filter(performer => {
@@ -57,10 +55,8 @@ export async function searchPerformers(criteria: SearchCriteria): Promise<Perfor
 
     return performers;
 
-  } catch (error) {
+  } catch (error: any) {
     console.error("Error searching performers in Firestore:", error);
-    // In case of an error (e.g., missing index), return an empty array
-    // to prevent the flow from crashing.
-    return [];
+    throw new Error(error.message || "An unexpected error occurred while searching for performers.");
   }
 }

@@ -1,4 +1,3 @@
-
 import type { NextConfig } from 'next';
 
 const nextConfig: NextConfig = {
@@ -9,6 +8,7 @@ const nextConfig: NextConfig = {
     ignoreDuringBuilds: true,
   },
   images: {
+    unoptimized: true, // Disable image optimization for static export
     remotePatterns: [
       {
         protocol: 'https',
@@ -36,11 +36,27 @@ const nextConfig: NextConfig = {
       },
     ],
   },
-  experimental: {
-    allowedDevOrigins: [
-      "https://9007-firebase-studio-1748634183902.cluster-aj77uug3sjd4iut4ev6a4jbtf2.cloudworkstations.dev",
-      "http://localhost:9007",
-    ],
+  // Remove this line to disable static export mode:
+  // output: 'export',
+
+  webpack(config) {
+    // Add handlebars loader for .js files inside handlebars package
+    config.module.rules.push({
+      test: /\.js$/,
+      include: /node_modules\/handlebars/,
+      use: {
+        loader: 'handlebars-loader',
+      },
+    });
+
+    // Suppress require.extensions warning
+    config.ignoreWarnings = [
+      {
+        message: /require\.extensions is not supported by webpack/,
+      },
+    ];
+
+    return config;
   },
 };
 

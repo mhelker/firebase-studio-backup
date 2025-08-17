@@ -1,9 +1,8 @@
-
 "use client";
 
 import * as React from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useForm } from "react-hook-form";
+import { useForm, FormProvider, useFormContext } from "react-hook-form";
 import { z } from "zod";
 import { Button } from "@/components/ui/button";
 import {
@@ -14,305 +13,241 @@ import {
   FormLabel,
   FormMessage,
 } from "@/components/ui/form";
-import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { StarRating } from "@/components/star-rating";
+import { useState, useEffect } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/auth-context";
-import { Loader2, DollarSign, Info, AlertTriangle } from "lucide-react";
-import { Separator } from "@/components/ui/separator";
-import { loadStripe } from "@stripe/stripe-js";
-import {
-  Elements,
-  PaymentElement,
-  useStripe,
-  useElements,
-} from "@stripe/react-stripe-js";
-import { createTipIntent } from "@/ai/flows/create-tip-intent";
+import { Loader2, Info, AlertTriangle, Gift, DollarSign } from "lucide-react";
 import { submitReviewAndTip } from "@/ai/flows/submit-review";
-import {
-  Alert,
-  AlertDescription,
-  AlertTitle,
-} from "@/components/ui/alert";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { loadStripe } from '@stripe/stripe-js';
+import { Elements, PaymentElement, useStripe, useElements } from '@stripe/react-stripe-js';
+import { createTipIntent } from "@/ai/flows/create-tip-intent";
+import { Input } from "./ui/input";
 
-const stripePromise = loadStripe(
-  process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY!
-);
-
-const reviewAndTipSchema = z.object({
+const reviewSchema = z.object({
   rating: z.number().min(1, "Please select a rating.").max(5),
   comment: z
     .string()
     .min(10, "Comment must be at least 10 characters.")
     .max(500, "Comment must be less than 500 characters."),
-  tipAmount: z.coerce.number().min(0, "Tip must be a non-negative number.").optional(),
+  tipAmount: z.coerce.number().min(0).optional(),
 });
 
-type ReviewAndTipFormValues = z.infer<typeof reviewAndTipSchema>;
+type ReviewFormValues = z.infer<typeof reviewSchema>;
 
-interface ReviewAndTipFormProps {
+interface ReviewFormProps {
   performerId: string;
   bookingId: string;
   onReviewSubmitted: () => void;
 }
 
+const stripePromise = loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY!);
+
 function InnerReviewForm({
   onReviewSubmitted,
+  isTippingReady,
+  onProceedToPayment,
+  isProceeding,
   bookingId,
   performerId,
-  tipAmount,
-  setTipAmount,
-  clientSecret,
-  isDemoMode,
-}: ReviewAndTipFormProps & {
-  tipAmount: number;
-  setTipAmount: React.Dispatch<React.SetStateAction<number>>;
-  clientSecret: string | null;
-  isDemoMode: boolean;
+}: {
+  onReviewSubmitted: () => void;
+  isTippingReady: boolean;
+  onProceedToPayment: () => void;
+  isProceeding: boolean;
+  bookingId: string;
+  performerId: string;
 }) {
   const { user } = useAuth();
   const { toast } = useToast();
+  const form = useFormContext<ReviewFormValues>();
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
   const stripe = useStripe();
   const elements = useElements();
 
-  const [isProcessing, setIsProcessing] = React.useState(false);
+  const tipAmount = form.watch("tipAmount") || 0;
+  
+  const shouldProceedToPayment = tipAmount > 0 && !isTippingReady;
 
-  const form = useForm<ReviewAndTipFormValues>({
-    resolver: zodResolver(reviewAndTipSchema),
-    defaultValues: { rating: 0, comment: "", tipAmount: 0 },
-  });
-
-  React.useEffect(() => {
-    form.setValue("tipAmount", tipAmount);
-  }, [tipAmount, form]);
-
-  const handleFullSubmit = async (data: ReviewAndTipFormValues) => {
+  const handleFullSubmit = async (data: ReviewFormValues) => {
     if (!user) {
       toast({ title: "Not Authenticated", variant: "destructive" });
       return;
     }
-    if (!performerId) {
-      toast({ title: "Error", description: "Performer ID is missing.", variant: "destructive" });
-      return;
+    setIsSubmitting(true);
+
+    if (isTippingReady) {
+      if (!stripe || !elements) {
+        toast({ title: "Payment form not ready", variant: "destructive" });
+        setIsSubmitting(false);
+        return;
+      }
+      const { error: paymentError } = await stripe.confirmPayment({
+        elements,
+        redirect: 'if_required',
+      });
+      if (paymentError) {
+        toast({ title: "Payment Error", description: paymentError.message || "An error occurred.", variant: "destructive" });
+        setIsSubmitting(false);
+        return;
+      }
     }
 
-    setIsProcessing(true);
     try {
-      if (tipAmount > 0 && !isDemoMode) {
-        if (!stripe || !elements || !clientSecret) {
-          throw new Error("Payment form not ready. Please wait and try again.");
-        }
-        const { error: paymentError } = await stripe.confirmPayment({
-          elements,
-          redirect: "if_required",
-        });
-
-        if (paymentError) {
-          throw new Error(paymentError.message || "An unexpected payment error occurred.");
-        }
-      }
-
       const result = await submitReviewAndTip({
         bookingId,
         performerId,
         rating: data.rating,
         comment: data.comment,
-        tipAmount,
         userId: user.uid,
+        tipAmount: data.tipAmount || 0,
       });
-
       toast({ title: result.title, description: result.description });
       onReviewSubmitted();
     } catch (error: any) {
-      toast({
-        title: "Submission Error",
-        description: error.message || "An unexpected error occurred.",
-        variant: "destructive",
-      });
+      toast({ title: "Submission Error", description: error.message || "An error occurred.", variant: "destructive" });
     } finally {
-      setIsProcessing(false);
+      setIsSubmitting(false);
     }
   };
 
-  const isButtonDisabled =
-    isProcessing || (tipAmount > 0 && !isDemoMode && !clientSecret);
-
   return (
-    <Form {...form}>
-      <form onSubmit={form.handleSubmit(handleFullSubmit)} className="space-y-6">
-        <Alert>
-          <Info className="h-4 w-4" />
-          <AlertTitle>How Reviews Work</AlertTitle>
-          <AlertDescription>
-            Your review is hidden until the performer also reviews you, or after 14 days.
-          </AlertDescription>
-        </Alert>
-
-        <FormField
-          control={form.control}
-          name="rating"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>Your Rating</FormLabel>
-              <FormControl>
-                <div className="flex">
-                  <StarRating rating={field.value} interactive onRate={field.onChange} size={28} />
-                </div>
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-
-        <FormField
-          control={form.control}
-          name="comment"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>Your Comment</FormLabel>
-              <FormControl>
-                <Textarea
-                  placeholder="Tell us about your experience..."
-                  {...field}
-                  disabled={isProcessing}
-                />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-
-        <Separator />
-
-        <div>
-          <h3 className="text-lg font-medium">Leave a Tip (Optional)</h3>
-          <p className="text-sm text-muted-foreground">Add a tip if you enjoyed the performance.</p>
-        </div>
-
-        <FormField
-          control={form.control}
-          name="tipAmount"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>Tip Amount ($)</FormLabel>
-              <FormControl>
-                <div className="relative">
-                  <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                  <Input
-                    type="number"
-                    placeholder="0.00"
-                    className="pl-8"
-                    step="1.00"
-                    min="0"
-                    {...field}
-                    value={tipAmount}
-                    onChange={(e) => {
-                      const value = e.target.valueAsNumber;
-                      setTipAmount(isNaN(value) ? 0 : value);
-                      field.onChange(isNaN(value) ? 0 : value);
-                    }}
-                    disabled={isProcessing}
-                  />
-                </div>
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-
-        {tipAmount > 0 && (
-          isDemoMode ? (
-            <Alert variant="destructive">
-              <AlertTriangle className="h-4 w-4" />
-              <AlertTitle>Stripe Demo Mode</AlertTitle>
-              <AlertDescription>
-                Stripe keys are not configured. Real payments are disabled. Add your `STRIPE_SECRET_KEY` to the `.env` file and restart the server to enable tipping.
-              </AlertDescription>
-            </Alert>
-          ) : clientSecret ? (
-            <div className="p-4 border rounded-md">
-              <h4 className="font-semibold mb-2">Secure Tip Payment</h4>
-              <PaymentElement id="payment-element" />
-            </div>
-          ) : (
-            <div className="flex items-center justify-center p-4">
-              <Loader2 className="animate-spin mr-2" /> Loading payment form...
-            </div>
-          )
+    <form onSubmit={form.handleSubmit(handleFullSubmit)} className="space-y-6">
+      {/* --- THIS SECTION IS NOW FULLY EXPANDED AND CORRECT --- */}
+      <FormField
+        control={form.control}
+        name="rating"
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel>Your Rating</FormLabel>
+            <FormControl><StarRating rating={field.value} interactive onRate={field.onChange} size={28} /></FormControl>
+            <FormMessage />
+          </FormItem>
         )}
+      />
+      <FormField
+        control={form.control}
+        name="comment"
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel>Your Comment</FormLabel>
+            <FormControl><Textarea placeholder="Tell us about your experience..." {...field} /></FormControl>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
+      <FormField
+        control={form.control}
+        name="tipAmount"
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel className="flex items-center gap-2"><Gift className="w-4 h-4" /> Add a Tip? (Optional)</FormLabel>
+            <FormControl>
+              <div className="relative">
+                <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                  type="number"
+                  placeholder="0.00"
+                  className="pl-8"
+                  min="0"
+                  step="0.01"
+                  {...field}
+                />
+              </div>
+            </FormControl>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
+      {/* --- END OF EXPANDED SECTION --- */}
+      
+      {isTippingReady && (
+        <div className="space-y-4">
+          <FormLabel>Payment Details</FormLabel>
+          <div className="mt-2 p-4 border rounded-md bg-background"><PaymentElement /></div>
+        </div>
+      )}
 
-        <Button type="submit" className="w-full" disabled={isButtonDisabled}>
-          {isProcessing ? (
-            <>
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Processing...
-            </>
-          ) : tipAmount > 0 ? (
-            `Submit Review & ${isDemoMode ? "Simulate" : "Pay"} $${tipAmount.toFixed(2)} Tip`
-          ) : (
-            "Submit Review"
-          )}
-        </Button>
-      </form>
-    </Form>
+      <Button
+        type={shouldProceedToPayment ? "button" : "submit"}
+        onClick={shouldProceedToPayment ? onProceedToPayment : undefined}
+        disabled={isProceeding || isSubmitting || (isTippingReady && (!stripe || !elements))}
+        className="w-full"
+      >
+        {isProceeding ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Proceeding...</>
+          : isSubmitting ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Submitting...</>
+          : shouldProceedToPayment ? "Proceed to Payment" : "Submit Review"}
+      </Button>
+    </form>
   );
 }
 
-export function ReviewAndTipForm(props: ReviewAndTipFormProps) {
-  const [tipAmount, setTipAmount] = React.useState(0);
-  const [clientSecret, setClientSecret] = React.useState<string | null>(null);
-  const [isDemoMode, setIsDemoMode] = React.useState(false);
-  const { toast } = useToast();
+export function ReviewForm({ performerId, bookingId, onReviewSubmitted }: ReviewFormProps) {
+  const [clientSecret, setClientSecret] = useState<string | null>(null);
+  const [isDemoMode, setIsDemoMode] = useState(false);
+  const [isLoadingSecret, setIsLoadingSecret] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  React.useEffect(() => {
-    if (tipAmount <= 0) {
-      setClientSecret(null);
-      return;
-    }
+  const form = useForm<ReviewFormValues>({
+    resolver: zodResolver(reviewSchema),
+    defaultValues: { rating: 0, comment: "", tipAmount: 0 },
+  });
 
-    createTipIntent({ bookingId: props.bookingId, tipAmount })
-      .then((intent) => {
-        setIsDemoMode(intent.isDemoMode);
-        if (intent.clientSecret) {
-          setClientSecret(intent.clientSecret);
-        } else if (!intent.isDemoMode) {
-          toast({
-            title: "Payment Error",
-            description: "Could not initialize the payment form.",
-            variant: "destructive",
-          });
-          setClientSecret(null);
-        }
-      })
-      .catch((error) => {
-        console.error("Could not create tip intent:", error);
-        toast({
-          title: "Payment Error",
-          description: "Could not initialize the payment form.",
-          variant: "destructive",
-        });
+  const isTippingReady = !!clientSecret && !isDemoMode;
+
+  const handleProceedToPayment = async () => {
+    const tipAmount = form.getValues("tipAmount") || 0;
+    if (tipAmount <= 0) return;
+
+    setIsLoadingSecret(true);
+    setError(null);
+    try {
+      const intent = await createTipIntent({ bookingId, tipAmount });
+      if (intent.isDemoMode) {
+        setIsDemoMode(true);
         setClientSecret(null);
-      });
-  }, [tipAmount, props.bookingId, toast]);
+      } else if (intent.clientSecret) {
+        setIsDemoMode(false);
+        setClientSecret(intent.clientSecret);
+      } else {
+        setError("Could not initialize the payment form.");
+      }
+    } catch (err: any) {
+      console.error("Error creating payment intent:", err);
+      setError("An unexpected error occurred while setting up the payment form.");
+    } finally {
+      setIsLoadingSecret(false);
+    }
+  };
 
-  // Only render Elements if tipAmount is 0 or clientSecret is ready or demo mode
-  if (tipAmount > 0 && !clientSecret && !isDemoMode) {
-    return (
-      <div className="flex items-center justify-center p-4">
-        <Loader2 className="animate-spin mr-2" /> Loading payment form...
-      </div>
-    );
-  }
+  const elementOptions = clientSecret ? { clientSecret } : {};
 
   return (
-    <Elements stripe={stripePromise} options={clientSecret ? { clientSecret } : undefined}>
-      <InnerReviewForm
-        {...props}
-        tipAmount={tipAmount}
-        setTipAmount={setTipAmount}
-        clientSecret={clientSecret}
-        isDemoMode={isDemoMode}
-      />
-    </Elements>
+    <FormProvider {...form}>
+      <div className="space-y-4 mb-6">
+        {isDemoMode && <Alert variant="destructive"><AlertTriangle className="h-4 w-4" /><AlertTitle>Stripe Demo Mode</AlertTitle><AlertDescription>Tipping is disabled.</AlertDescription></Alert>}
+        {error && <Alert variant="destructive"><AlertTriangle className="h-4 w-4" /><AlertTitle>Payment Error</AlertTitle><AlertDescription>{error}</AlertDescription></Alert>}
+      </div>
+
+      <Elements stripe={stripePromise} options={elementOptions} key={clientSecret || 'no-tip'}>
+        <InnerReviewForm
+          onReviewSubmitted={onReviewSubmitted}
+          isTippingReady={isTippingReady}
+          onProceedToPayment={handleProceedToPayment}
+          isProceeding={isLoadingSecret}
+          bookingId={bookingId}
+          performerId={performerId}
+        />
+      </Elements>
+
+      <Alert className="mt-6">
+        <Info className="h-4 w-4" />
+        <AlertTitle>How Reviews Work</AlertTitle>
+        <AlertDescription>Your review is hidden until the performer also reviews you, or after 14 days.</AlertDescription>
+      </Alert>
+    </FormProvider>
   );
 }

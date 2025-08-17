@@ -1,88 +1,70 @@
-
 'use server';
 
-/**
- * @fileOverview A performer recommendation AI agent.
- *
- * - recommendPerformers - A function that handles the performer recommendation process.
- * - RecommendPerformersInput - The input type for the recommendPerformers function.
- * - RecommendPerformersOutput - The return type for the recommendPerformers function.
- */
-
-import {ai} from '@/ai/genkit';
-import {z} from 'genkit';
+import { GoogleGenerativeAI, GenerationConfig } from '@google/generative-ai'; // Import GenerationConfig
+import { z } from 'zod';
 import { searchPerformers } from '@/services/performer-service';
-import { Performer } from '@/types';
+import type { Performer } from '@/types';
 
-const getPerformersTool = ai.defineTool(
-    {
-        name: 'getPerformers',
-        description: 'Get a list of available performers based on talent type.',
-        inputSchema: z.object({ 
-            talentType: z.string().describe('The category of talent to search for, e.g., "Music", "Magic", "Comedy".'),
-        }),
-        outputSchema: z.array(z.custom<Performer>()),
-    },
-    async (input) => {
-        return await searchPerformers(input.talentType);
-    }
-);
-
-
+// Zod schemas remain the same
 const RecommendPerformersInputSchema = z.object({
-  eventDescription: z
-    .string()
-    .describe('The description of the event for which performers are needed.'),
-  desiredMood: z.string().describe('The desired mood or atmosphere of the event.'),
-  budget: z.number().describe('The budget for the performer.'),
-  talentType: z.string().describe('The primary type of talent required (e.g., music, magic, comedy). This helps narrow down the initial search.'),
+  eventDescription: z.string(), desiredMood: z.string(),
+  budget: z.number(), talentType: z.string(),
 });
 export type RecommendPerformersInput = z.infer<typeof RecommendPerformersInputSchema>;
-
-const RecommendedPerformerSchema = z.object({
-  id: z.string().describe("The unique ID of the performer from the database."),
-  name: z.string().describe('The name of the performer.'),
-  talentTypes: z.array(z.string()).describe('An array of talent types the performer specializes in (e.g., ["Guitarist", "Singer", "Painter"]).'),
-  description: z.string().describe('A brief description of the performer.'),
-  price: z.number().describe('The price for the performance.'),
-  availability: z.string().describe('The availability of the performer (e.g., "Weekends", "Evenings after 6 PM").'),
-  recommendationReason: z.string().describe('A brief, compelling reason why this performer is recommended for the event.'),
+const AiRecommendedPerformerSchema = z.object({
+  id: z.string(), name: z.string(), talentTypes: z.array(z.string()),
+  description: z.string(), price: z.number(), availability: z.string(),
+  recommendationReason: z.string(),
 });
-
-const RecommendPerformersOutputSchema = z.array(RecommendedPerformerSchema).describe('A list of recommended performers.');
+const RecommendPerformersOutputSchema = z.array(AiRecommendedPerformerSchema);
 export type RecommendPerformersOutput = z.infer<typeof RecommendPerformersOutputSchema>;
 
 export async function recommendPerformers(input: RecommendPerformersInput): Promise<RecommendPerformersOutput> {
-  return recommendPerformersFlow(input);
-}
+  try {
+    const validatedInput = RecommendPerformersInputSchema.parse(input);
 
-const prompt = ai.definePrompt({
-  name: 'recommendPerformersPrompt',
-  input: {schema: RecommendPerformersInputSchema},
-  output: {schema: RecommendPerformersOutputSchema},
-  tools: [getPerformersTool],
-  prompt: `You are an expert talent agent. Your goal is to recommend the best real performers from our platform for a client's event.
+    const searchCriteria: { talentType?: string } = {};
+    if (validatedInput.talentType && validatedInput.talentType.toLowerCase() !== 'any' && validatedInput.talentType.toLowerCase() !== 'all') {
+      searchCriteria.talentType = validatedInput.talentType;
+    }
+    const availablePerformers = await searchPerformers(searchCriteria);
+    if (availablePerformers.length === 0) return [];
 
-  1. Use the \`getPerformers\` tool to find a list of available performers based on the primary talent type the user is looking for.
-  2. From that list, carefully review the client's event details:
-     - Event Description: {{{eventDescription}}}
-     - Desired Mood: {{{desiredMood}}}
-     - Budget: {{{budget}}}
-  3. Select up to 3 performers who are the best fit. Your selection should be based on all the provided criteria.
-  4. For each performer you select, you MUST include their real \`id\` from the tool's output.
-  5. For each performer, write a short, personalized \`recommendationReason\` explaining *why* they are a great choice for this specific event.
-  6. The output must be a JSON array of performer objects, matching the provided schema. If no performers are found or none are a good fit, return an empty array.`,
-});
+    // --- FINAL ATTEMPT: More robust initialization ---
+    const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
+    
+    // Explicitly define generation config to ensure JSON output
+    const generationConfig: GenerationConfig = {
+      responseMimeType: "application/json",
+    };
+    
+    // Use the latest, most powerful model available.
+    const model = genAI.getGenerativeModel({ model: "gemini-1.5-pro-latest", generationConfig });
+    // --- END OF FINAL ATTEMPT ---
 
-const recommendPerformersFlow = ai.defineFlow(
-  {
-    name: 'recommendPerformersFlow',
-    inputSchema: RecommendPerformersInputSchema,
-    outputSchema: RecommendPerformersOutputSchema,
-  },
-  async input => {
-    const {output} = await prompt(input);
-    return output || [];
+    const prompt = `Based on the following list of available performers and the client's event details, recommend up to 3 performers.
+    
+    AVAILABLE PERFORMERS (JSON):
+    ${JSON.stringify(availablePerformers)}
+
+    CLIENT EVENT DETAILS:
+    - Event Description: ${validatedInput.eventDescription}
+    - Desired Mood: ${validatedInput.desiredMood}
+    - Budget: ${validatedInput.budget}
+
+    Your task is to return a JSON array of the best-fit performers. For each performer, you MUST include their real 'id' from the list and write a short, personalized 'recommendationReason'.
+    Your output MUST be ONLY the valid JSON array and nothing else.
+    If none are a good fit, return an empty array [].`;
+
+    const result = await model.generateContent(prompt);
+    // When using JSON output mode, we parse directly from response.text()
+    const responseText = result.response.text();
+    const parsedOutput = JSON.parse(responseText);
+    
+    return RecommendPerformersOutputSchema.parse(parsedOutput);
+
+  } catch (error) {
+    console.error("Error in recommendPerformers flow:", error);
+    throw new Error("The AI agent failed to generate recommendations.");
   }
-);
-
+}

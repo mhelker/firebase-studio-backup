@@ -11,7 +11,6 @@ import { useAuth } from '@/contexts/auth-context';
 import { usePathname } from 'next/navigation';
 
 export function Header() {
-  // The imageUrl is now managed by the AuthProvider for global access
   const { user, loading, logOut, imageUrl } = useAuth();
   const pathname = usePathname();
 
@@ -42,9 +41,12 @@ export function Header() {
               <Link href={item.href}>{item.label}</Link>
             </Button>
           ))}
-          <Button asChild className="bg-accent hover:bg-accent/90 text-accent-foreground ml-2">
+          {/* --- THE FIX IS HERE --- */}
+          {/* Changed variant to "ghost" and adjusted hover classes */}
+          <Button asChild variant="ghost" className="hover:bg-accent hover:text-accent-foreground ml-2">
             <Link href="/performers" suppressHydrationWarning>Book Talent</Link>
           </Button>
+          {/* --- END OF FIX --- */}
 
           {loading ? (
             <div className="w-8 h-8 rounded-full bg-muted animate-pulse ml-2" />

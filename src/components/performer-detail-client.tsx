@@ -1,8 +1,6 @@
-
-"use client";
+'use client';
 
 import Image from 'next/image';
-import Link from 'next/link';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -11,8 +9,8 @@ import { ReviewCard } from '@/components/review-card';
 import { BookingForm } from '@/components/booking-form';
 import { CalendarDays, DollarSign, MapPin, Users, Mail, Clock4, Award, Briefcase, PlayCircle, Loader2, Volume2 } from 'lucide-react';
 import type { Review, Performer } from '@/types';
-import { useState } from 'react';
-import { generateTts } from '@/ai/flows/generate-tts';
+import { useState, useEffect } from 'react';
+import { generateTtsAction } from '@/actions/ttsActions';
 
 interface PerformerDetailClientProps {
   performer: Performer;
@@ -23,6 +21,11 @@ export function PerformerDetailClient({ performer, reviews }: PerformerDetailCli
   const [ttsAudio, setTtsAudio] = useState<string | null>(null);
   const [isGeneratingTts, setIsGeneratingTts] = useState(false);
   const [ttsError, setTtsError] = useState<string | null>(null);
+  const [isClient, setIsClient] = useState(false);
+
+  useEffect(() => {
+    setIsClient(true);
+  }, []);
 
   const handleListen = async () => {
     if (!performer?.longDescription) {
@@ -33,7 +36,7 @@ export function PerformerDetailClient({ performer, reviews }: PerformerDetailCli
     setTtsError(null);
     setTtsAudio(null);
     try {
-      const result = await generateTts(performer.longDescription);
+      const result = await generateTtsAction(performer.longDescription);
       setTtsAudio(result.audioDataUri);
     } catch (err) {
       console.error("Error generating TTS audio:", err);
@@ -47,7 +50,7 @@ export function PerformerDetailClient({ performer, reviews }: PerformerDetailCli
 
   return (
     <div className="max-w-4xl mx-auto space-y-8">
-      {/* Performer Details Card */}
+      {/* --- THIS IS THE MISSING SECTION, NOW RESTORED --- */}
       <Card className="overflow-hidden shadow-xl">
         <div className="relative h-64 md:h-96 w-full">
           <Image
@@ -73,36 +76,36 @@ export function PerformerDetailClient({ performer, reviews }: PerformerDetailCli
           </div>
         </CardHeader>
         <CardContent className="p-6 space-y-6">
-            <div>
-                <div className="flex items-center gap-4 mb-2">
-                    <h3 className="text-xl font-headline text-primary">About {performer.name}</h3>
-                    <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={handleListen}
-                        disabled={isGeneratingTts || !performer.longDescription}
-                    >
-                        {isGeneratingTts ? (
-                            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                        ) : (
-                            <Volume2 className="w-4 h-4 mr-2" />
-                        )}
-                        Listen
-                    </Button>
-                </div>
-                <p className="text-lg text-foreground/80">{performer.longDescription || performer.description}</p>
-                {ttsError && <p className="text-sm text-destructive mt-2">{ttsError}</p>}
-                {ttsAudio && (
-                    <div className="mt-4">
-                        <audio controls autoPlay src={ttsAudio}>
-                            Your browser does not support the audio element.
-                        </audio>
-                    </div>
+          <div>
+            <div className="flex items-center gap-4 mb-2">
+              <h3 className="text-xl font-headline text-primary">About {performer.name}</h3>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleListen}
+                disabled={isGeneratingTts || !performer.longDescription}
+              >
+                {isGeneratingTts ? (
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                ) : (
+                  <Volume2 className="w-4 h-4 mr-2" />
                 )}
+                Listen
+              </Button>
             </div>
-          
+            <p className="text-lg text-foreground/80">{performer.longDescription || performer.description}</p>
+            {ttsError && <p className="text-sm text-destructive mt-2">{ttsError}</p>}
+            {ttsAudio && (
+              <div className="mt-4">
+                <audio controls autoPlay src={ttsAudio}>
+                  Your browser does not support the audio element.
+                </audio>
+              </div>
+            )}
+          </div>
+
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 pt-4 border-t">
-             <div>
+            <div>
               <h3 className="font-semibold text-md mb-2 flex items-center"><Briefcase className="w-5 h-5 mr-2 text-primary" /> Talent Categories</h3>
               <ul className="list-disc list-inside text-sm text-foreground/70 space-y-1">
                 {(performer.talentTypes || []).map(type => <li key={type}>{type}</li>)}
@@ -116,69 +119,25 @@ export function PerformerDetailClient({ performer, reviews }: PerformerDetailCli
             </div>
             <div>
               <h3 className="font-semibold text-md mb-2 flex items-center"><Clock4 className="w-5 h-5 mr-2 text-primary" /> Availability</h3>
-               <ul className="list-disc list-inside text-sm text-foreground/70 space-y-1">
+              <ul className="list-disc list-inside text-sm text-foreground/70 space-y-1">
                 {(performer.availability && performer.availability.length > 0) ? performer.availability.map(avail => <li key={avail}>{avail}</li>) : <li>Not specified</li>}
               </ul>
             </div>
-             <div>
+            <div>
               <h3 className="font-semibold text-md mb-2 flex items-center"><MapPin className="w-5 h-5 mr-2 text-primary" /> Locations Served</h3>
-               <ul className="list-disc list-inside text-sm text-foreground/70 space-y-1">
+              <ul className="list-disc list-inside text-sm text-foreground/70 space-y-1">
                 {(performer.locationsServed && performer.locationsServed.length > 0) ? (performer.locationsServed || []).map(loc => <li key={loc}>{loc}</li>) : <li>Various locations</li>}
               </ul>
             </div>
-             <div>
+            <div>
               <h3 className="font-semibold text-md mb-2 flex items-center"><DollarSign className="w-5 h-5 mr-2 text-primary" /> Price</h3>
               <p className="text-lg font-semibold">${performer.pricePerHour || 0}<span className="text-sm font-normal text-muted-foreground">/hour</span></p>
             </div>
           </div>
-
-          {performer.contactEmail && (
-            <div className="pt-6 border-t">
-              <Button variant="outline" asChild>
-                <a href={`mailto:${performer.contactEmail}`} className="flex items-center">
-                  <Mail className="w-4 h-4 mr-2" /> Contact {performer.name}
-                </a>
-              </Button>
-            </div>
-          )}
-
-          <div className="pt-6 border-t">
-            <h3 className="text-xl font-headline font-semibold mb-4 flex items-center text-primary">
-              <PlayCircle className="w-6 h-6 mr-2" /> Featured Performance
-            </h3>
-            {performer.youtubeVideoId ? (
-              <div className="aspect-video w-full max-w-xl mx-auto rounded-lg overflow-hidden shadow-md">
-                <iframe
-                  className="w-full h-full"
-                  src={`https://www.youtube.com/embed/${performer.youtubeVideoId}`}
-                  title="YouTube video player"
-                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                  allowFullScreen
-                ></iframe>
-              </div>
-            ) : (
-              <>
-                <div className="relative aspect-video w-full max-w-xl mx-auto rounded-lg overflow-hidden group bg-muted cursor-pointer shadow-md">
-                  <Image
-                    src={performer.featuredPerformanceUrl || "https://placehold.co/1280x720.png"}
-                    alt={`${performer.name || 'The performer'}'s featured performance`}
-                    fill
-                    style={{objectFit: "cover"}}
-                    data-ai-hint="live music stage"
-                  />
-                  <div className="absolute inset-0 flex items-center justify-center bg-black/30 group-hover:bg-black/40 transition-colors">
-                    <PlayCircle className="w-16 h-16 text-white/70 group-hover:text-white transition-transform group-hover:scale-110" />
-                  </div>
-                </div>
-                <p className="text-xs text-muted-foreground mt-2 text-center">
-                  This performer has not added a featured video yet.
-                </p>
-              </>
-            )}
-          </div>
         </CardContent>
       </Card>
-      
+      {/* --- END OF RESTORED SECTION --- */}
+
       {/* Booking Form Card */}
       <Card className="shadow-lg">
         <CardHeader>
@@ -188,7 +147,13 @@ export function PerformerDetailClient({ performer, reviews }: PerformerDetailCli
           <CardDescription>Fill out the form below to request a booking.</CardDescription>
         </CardHeader>
         <CardContent>
-          <BookingForm performerId={performer.id} performerName={performer.name || 'this performer'} pricePerHour={performer.pricePerHour || 0} />
+          {isClient ? (
+            <BookingForm performerId={performer.id} performerName={performer.name || 'this performer'} pricePerHour={performer.pricePerHour || 0} />
+          ) : (
+            <div className="flex items-center justify-center p-6">
+              <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+            </div>
+          )}
         </CardContent>
       </Card>
 

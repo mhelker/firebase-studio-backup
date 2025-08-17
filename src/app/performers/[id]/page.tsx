@@ -34,7 +34,6 @@ async function getPerformerData(id: string): Promise<{ performer: Performer; rev
       isFeatured: performerData.isFeatured || false,
       bankAccountNumber: performerData.bankAccountNumber || "",
       routingNumber: performerData.routingNumber || "",
-      // Safely serialize the timestamp. Pass as is if already a string, or convert from Timestamp.
       createdAt: performerData.createdAt instanceof Timestamp ? performerData.createdAt.toDate().toISOString() : performerData.createdAt,
   };
 
@@ -43,7 +42,6 @@ async function getPerformerData(id: string): Promise<{ performer: Performer; rev
   const reviewsQuery = query(reviewsCollectionRef, orderBy("date", "desc"), limit(10));
   const reviewsSnapshot = await getDocs(reviewsQuery);
   
-  // Manually rebuild reviews to ensure all data is serializable
   const serializedReviews: Review[] = reviewsSnapshot.docs.map(doc => {
     const reviewData = doc.data();
     return {
@@ -55,7 +53,6 @@ async function getPerformerData(id: string): Promise<{ performer: Performer; rev
       userImageUrl: reviewData.userImageUrl || '',
       rating: reviewData.rating || 0,
       comment: reviewData.comment || '',
-      // Safely serialize the timestamp
       date: reviewData.date instanceof Timestamp ? reviewData.date.toDate().toISOString() : reviewData.date,
     };
   });
@@ -69,7 +66,10 @@ async function getPerformerData(id: string): Promise<{ performer: Performer; rev
 
 // Note: This is now a Server Component
 export default async function PerformerDetailPage({ params }: { params: { id: string } }) {
-  const { id } = params;
+  // --- THE FINAL, DEFINITIVE FIX IS HERE ---
+  // Using the exact syntax from the Next.js documentation:
+  const { id } = await params;
+  
   const { performer, reviews } = await getPerformerData(id);
 
   return (
