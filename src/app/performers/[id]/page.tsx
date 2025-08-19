@@ -1,20 +1,32 @@
+// src/app/performers/[id]/page.tsx
+
 import { notFound } from 'next/navigation';
-import { doc, getDoc, collection, getDocs, query, orderBy, limit, Timestamp } from "firebase/firestore";
-import { db } from "@/lib/firebase";
+// We will use the Admin SDK for server-side fetching
+import { db as adminDb } from '@/lib/firebase-admin-lazy';
 import type { Review, Performer } from '@/types';
 import { PerformerDetailClient } from '@/components/performer-detail-client';
 
-async function getPerformerData(id: string): Promise<{ performer: Performer; reviews: Review[]; }> {
-  // Fetch performer details
-  const performerDocRef = doc(db, "performers", id);
-  const performerSnap = await getDoc(performerDocRef);
+// Helper to convert Firestore Timestamps to strings
+function serializeTimestamp(timestamp: any): string {
+  if (timestamp && typeof timestamp.toDate === 'function') {
+    return timestamp.toDate().toISOString();
+  }
+  return new Date().toISOString(); // Fallback
+}
 
-  if (!performerSnap.exists()) {
+async function getPerformerData(id: string): Promise<{ performer: Performer; reviews: Review[]; }> {
+  // === Using the Admin SDK now ===
+  const firestore = adminDb;
+
+  // Fetch performer details
+  const performerDocRef = firestore.collection("performers").doc(id);
+  const performerSnap = await performerDocRef.get();
+
+  if (!performerSnap.exists) {
     notFound();
   }
   
-  const performerData = performerSnap.data();
-  // Manually rebuild the performer object to ensure all data is serializable and has fallbacks
+  const performerData = performerSnap.data()!;
   const serializedPerformer: Performer = {
       id: performerSnap.id,
       name: performerData.name || 'Unnamed Performer',
@@ -34,13 +46,18 @@ async function getPerformerData(id: string): Promise<{ performer: Performer; rev
       isFeatured: performerData.isFeatured || false,
       bankAccountNumber: performerData.bankAccountNumber || "",
       routingNumber: performerData.routingNumber || "",
-      createdAt: performerData.createdAt instanceof Timestamp ? performerData.createdAt.toDate().toISOString() : performerData.createdAt,
+      createdAt: serializeTimestamp(performerData.createdAt),
   };
 
-  // Fetch reviews
-  const reviewsCollectionRef = collection(db, `performers/${id}/reviews`);
-  const reviewsQuery = query(reviewsCollectionRef, orderBy("date", "desc"), limit(10));
-  const reviewsSnapshot = await getDocs(reviewsQuery);
+  // Fetch PUBLIC reviews from the top-level collection
+  const publicReviewsRef = firestore.collection('reviews');
+  const reviewsQuery = publicReviewsRef
+    .where("performerId", "==", id)
+    .where("author", "==", "customer")
+    .orderBy("date", "desc")
+    .limit(20);
+  
+  const reviewsSnapshot = await reviewsQuery.get();
   
   const serializedReviews: Review[] = reviewsSnapshot.docs.map(doc => {
     const reviewData = doc.data();
@@ -48,12 +65,12 @@ async function getPerformerData(id: string): Promise<{ performer: Performer; rev
       id: doc.id,
       bookingId: reviewData.bookingId || '',
       performerId: reviewData.performerId || '',
-      userId: reviewData.userId || '',
+      userId: reviewData.customerId || '',
       userName: reviewData.userName || 'Anonymous',
       userImageUrl: reviewData.userImageUrl || '',
       rating: reviewData.rating || 0,
       comment: reviewData.comment || '',
-      date: reviewData.date instanceof Timestamp ? reviewData.date.toDate().toISOString() : reviewData.date,
+      date: serializeTimestamp(reviewData.date),
     };
   });
 
@@ -64,12 +81,9 @@ async function getPerformerData(id: string): Promise<{ performer: Performer; rev
 }
 
 
-// Note: This is now a Server Component
+// This part remains the same
 export default async function PerformerDetailPage({ params }: { params: { id: string } }) {
-  // --- THE FINAL, DEFINITIVE FIX IS HERE ---
-  // Using the exact syntax from the Next.js documentation:
   const { id } = await params;
-  
   const { performer, reviews } = await getPerformerData(id);
 
   return (

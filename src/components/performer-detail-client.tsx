@@ -134,6 +134,40 @@ export function PerformerDetailClient({ performer, reviews }: PerformerDetailCli
               <p className="text-lg font-semibold">${performer.pricePerHour || 0}<span className="text-sm font-normal text-muted-foreground">/hour</span></p>
             </div>
           </div>
+          <div className="pt-6 border-t">
+            <h3 className="text-xl font-headline font-semibold mb-4 flex items-center text-primary">
+              <PlayCircle className="w-6 h-6 mr-2" /> Featured Performance
+            </h3>
+            {performer.youtubeVideoId ? (
+              <div className="aspect-video w-full max-w-xl mx-auto rounded-lg overflow-hidden shadow-md">
+                <iframe
+                  className="w-full h-full"
+                  src={`https://www.youtube.com/embed/${performer.youtubeVideoId}`}
+                  title="YouTube video player"
+                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                  allowFullScreen
+                ></iframe>
+              </div>
+            ) : (
+              <>
+                <div className="relative aspect-video w-full max-w-xl mx-auto rounded-lg overflow-hidden group bg-muted cursor-pointer shadow-md">
+                  <Image
+                    src={performer.featuredPerformanceUrl || "https://placehold.co/1280x720.png"}
+                    alt={`${performer.name || 'The performer'}'s featured performance`}
+                    fill
+                    style={{objectFit: "cover"}}
+                    data-ai-hint="live music stage"
+                  />
+                  <div className="absolute inset-0 flex items-center justify-center bg-black/30 group-hover:bg-black/40 transition-colors">
+                    <PlayCircle className="w-16 h-16 text-white/70 group-hover:text-white transition-transform group-hover:scale-110" />
+                  </div>
+                </div>
+                <p className="text-xs text-muted-foreground mt-2 text-center">
+                  This performer has not added a featured video yet.
+                </p>
+              </>
+            )}
+          </div>
         </CardContent>
       </Card>
       {/* --- END OF RESTORED SECTION --- */}

@@ -5,11 +5,9 @@ import { ai } from '@/ai/genkit';
 import { z } from 'genkit';
 import type { Performer } from '@/types';
 
-// Lazily import firebase-admin to prevent app crash on missing env var
+// Lazily import firebase-admin
 async function getAdminFirestore() {
-  if (!process.env.FIREBASE_SERVICE_ACCOUNT) {
-    return null;
-  }
+  if (!process.env.FIREBASE_SERVICE_ACCOUNT) return null;
   const { db, FieldValue, Timestamp } = await import('@/lib/firebase-admin-lazy');
   return { db, FieldValue, Timestamp };
 }
@@ -21,14 +19,13 @@ function validateFirestoreId(id: string, label: string) {
 }
 
 // == FLOW 1: CUSTOMER REVIEWS PERFORMER ==
-
 const SubmitReviewAndTipInputSchema = z.object({
   bookingId: z.string(),
   performerId: z.string(),
   rating: z.number().min(1).max(5),
   comment: z.string().min(10).max(500),
   tipAmount: z.number().min(0),
-  userId: z.string(), // ✅ explicitly required
+  userId: z.string(),
 });
 
 const SubmitReviewAndTipOutputSchema = z.object({
@@ -37,236 +34,121 @@ const SubmitReviewAndTipOutputSchema = z.object({
 });
 
 export async function submitReviewAndTip(input: z.infer<typeof SubmitReviewAndTipInputSchema>): Promise<z.infer<typeof SubmitReviewAndTipOutputSchema>> {
-  return submitReviewAndTipFlow(input);
+  const admin = await getAdminFirestore();
+  if (!admin) throw new Error("Firebase Admin not configured.");
+  const { db: firestore, FieldValue, Timestamp } = admin;
+  const { bookingId, performerId, rating, comment, tipAmount, userId } = input;
+
+  validateFirestoreId(bookingId, 'bookingId');
+  validateFirestoreId(performerId, 'performerId');
+  validateFirestoreId(userId, 'userId');
+
+  await firestore.runTransaction(async (transaction) => {
+    const bookingDocRef = firestore.collection('bookings').doc(bookingId);
+    const customerDocRef = firestore.collection('customers').doc(userId);
+    const [bookingSnap, customerSnap] = await Promise.all([transaction.get(bookingDocRef), transaction.get(customerDocRef)]);
+
+    if (!bookingSnap.exists) throw new Error("Booking not found.");
+    if (!customerSnap.exists) throw new Error("Customer profile not found.");
+    if (bookingSnap.data()!.customerReviewSubmitted) throw new Error("You have already reviewed this booking.");
+
+    // Action 1: Create the immediate, private review in the performer's subcollection
+    const privateReviewRef = firestore.collection(`performers/${performerId}/reviews`).doc();
+    transaction.set(privateReviewRef, {
+      bookingId, performerId, userId, rating, comment,
+      userName: customerSnap.data()!.displayName || 'Anonymous',
+      userImageUrl: customerSnap.data()!.imageUrl || '',
+      date: FieldValue.serverTimestamp(),
+    });
+
+    // Action 2: Update the master booking document
+    const bookingUpdateData: any = {
+      customerReviewSubmitted: true,
+      customerRating: rating,
+      customerComment: comment,
+      customerName: customerSnap.data()!.displayName || 'Anonymous',
+      customerImageUrl: customerSnap.data()!.imageUrl || '',
+      publicReviewsCreated: false,
+    };
+    if (tipAmount > 0) bookingUpdateData.tipAmount = tipAmount;
+    
+    // --- THIS IS THE CRITICAL FIX ---
+    // Ensure completedAt is set, which is needed by the Cloud Function
+    if (!bookingSnap.data()!.completedAt) {
+      bookingUpdateData.completedAt = FieldValue.serverTimestamp();
+    }
+    // --- END OF FIX ---
+
+    // Set the deadline
+    const completionTime = (bookingSnap.data()!.completedAt || Timestamp.now()) as FirebaseFirestore.Timestamp;
+    bookingUpdateData.reviewDeadline = new Timestamp(completionTime.seconds + (14 * 24 * 60 * 60), completionTime.nanoseconds);
+    
+    transaction.update(bookingDocRef, bookingUpdateData);
+  });
+  
+  return { title: "Review Saved!", description: "Thank you for your feedback!" };
 }
 
-const submitReviewAndTipFlow = ai.defineFlow(
-  {
-    name: 'submitReviewAndTipFlow',
-    inputSchema: SubmitReviewAndTipInputSchema,
-    outputSchema: SubmitReviewAndTipOutputSchema,
-  },
-  async (input) => {
-    const admin = await getAdminFirestore();
-    if (!admin) {
-      console.warn("Firebase Admin SDK not configured. Running in demo mode.");
-      return {
-        title: "Review Submitted (Demo Mode)",
-        description: "This is a demo. In a real app, your review would be saved. To enable this feature, configure your FIREBASE_SERVICE_ACCOUNT in the .env file."
-      };
-    }
-
-    const { db: firestore, FieldValue, Timestamp } = admin;
-    const { bookingId, performerId, rating, comment, tipAmount, userId } = input;
-
-    validateFirestoreId(bookingId, 'bookingId');
-    validateFirestoreId(performerId, 'performerId');
-    validateFirestoreId(userId, 'userId');
-
-    try {
-      const resultMessage = await firestore.runTransaction(async (transaction) => {
-        const bookingDocRef = firestore.collection('bookings').doc(bookingId);
-        const performerDocRef = firestore.collection('performers').doc(performerId);
-        const customerDocRef = firestore.collection('customers').doc(userId);
-
-        const [bookingSnap, performerSnap, customerSnap] = await Promise.all([
-          transaction.get(bookingDocRef),
-          transaction.get(performerDocRef),
-          transaction.get(customerDocRef),
-        ]);
-
-        if (!bookingSnap.exists) throw new Error("Booking not found.");
-        if (!performerSnap.exists) throw new Error("Performer not found.");
-        if (!customerSnap.exists) throw new Error("Customer profile not found.");
-
-        const bookingData = bookingSnap.data()!;
-        const customerData = customerSnap.data()!;
-
-        if (bookingData.userId !== userId) throw new Error("You do not have permission to review this booking.");
-        if (bookingData.customerReviewSubmitted) throw new Error("You have already reviewed this booking.");
-
-        const bookingUpdateData: any = {
-          customerReviewSubmitted: true,
-          customerRating: rating,
-          customerComment: comment,
-          customerName: customerData.displayName || 'Anonymous',
-          customerImageUrl: customerData.imageUrl || '',
-        };
-
-        if (tipAmount > 0) {
-          bookingUpdateData.tipAmount = tipAmount;
-        }
-
-        if (bookingData.completedAt instanceof Timestamp) {
-          bookingUpdateData.reviewDeadline = new Timestamp(
-            bookingData.completedAt.seconds + (14 * 24 * 60 * 60),
-            bookingData.completedAt.nanoseconds
-          );
-        }
-
-        transaction.update(bookingDocRef, bookingUpdateData);
-
-        if (bookingData.performerReviewSubmitted) {
-          const performerData = performerSnap.data() as Performer;
-          const newReviewCount = (performerData.reviewCount || 0) + 1;
-          const newAverageRating = ((performerData.rating || 0) * (performerData.reviewCount || 0) + rating) / newReviewCount;
-
-          transaction.update(performerDocRef, {
-            rating: newAverageRating,
-            reviewCount: newReviewCount,
-          });
-
-          const newReviewRef = firestore.collection(`performers/${performerId}/reviews`).doc();
-          transaction.set(newReviewRef, {
-            bookingId,
-            performerId,
-            userId,
-            userName: customerData.displayName || 'Anonymous',
-            userImageUrl: customerData.imageUrl || '',
-            rating,
-            comment,
-            date: FieldValue.serverTimestamp(),
-          });
-
-          return {
-            title: "Review Submitted!",
-            description: "Both reviews are in! Your feedback is now public.",
-          };
-        } else {
-          return {
-            title: "Review Saved!",
-            description: "Thank you! Your review will be published once the performer leaves their feedback, or after 14 days.",
-          };
-        }
-      });
-
-      return resultMessage;
-    } catch (error: any) {
-      console.error("Error in submitReviewAndTipFlow:", error);
-      throw new Error(error.message || "An unexpected error occurred on the server.");
-    }
-  }
-);
-
-// === FLOW 2: PERFORMER REVIEWS CUSTOMER ===
-
+// == FLOW 2: PERFORMER REVIEWS CUSTOMER ==
 const SubmitPerformerReviewInputSchema = z.object({
   bookingId: z.string(),
   customerId: z.string(),
   rating: z.number().min(1).max(5),
   comment: z.string().min(10).max(500),
-  userId: z.string(), // ✅ explicitly required for safety
+  userId: z.string(), // This is the performer's ID
 });
 
 export async function submitPerformerReview(input: z.infer<typeof SubmitPerformerReviewInputSchema>): Promise<z.infer<typeof SubmitReviewAndTipOutputSchema>> {
-  return submitPerformerReviewFlow(input);
-}
+  const admin = await getAdminFirestore();
+  if (!admin) throw new Error("Firebase Admin not configured.");
+  const { db: firestore, FieldValue, Timestamp } = admin;
+  const { bookingId, customerId, rating, comment, userId: performerId } = input;
 
-const submitPerformerReviewFlow = ai.defineFlow(
-  {
-    name: 'submitPerformerReviewFlow',
-    inputSchema: SubmitPerformerReviewInputSchema,
-    outputSchema: SubmitReviewAndTipOutputSchema,
-  },
-  async (input) => {
-    const admin = await getAdminFirestore();
-    if (!admin) {
-      console.warn("Firebase Admin SDK not configured. Running in demo mode.");
-      return {
-        title: "Review Submitted (Demo Mode)",
-        description: "This is a demo. In a real app, your review would be saved. To enable this feature, configure your FIREBASE_SERVICE_ACCOUNT in the .env file."
-      };
-    }
+  validateFirestoreId(bookingId, 'bookingId');
+  validateFirestoreId(customerId, 'customerId');
+  validateFirestoreId(performerId, 'performerId');
+
+  await firestore.runTransaction(async (transaction) => {
+    const bookingDocRef = firestore.collection('bookings').doc(bookingId);
+    const performerDocRef = firestore.collection('performers').doc(performerId);
+    const [bookingSnap, performerSnap] = await Promise.all([transaction.get(bookingDocRef), transaction.get(performerDocRef)]);
+
+    if (!bookingSnap.exists) throw new Error("Booking not found.");
+    if (!performerSnap.exists) throw new Error("Performer profile not found.");
+    if (bookingSnap.data()!.performerReviewSubmitted) throw new Error("You have already reviewed this booking.");
+
+    // Action 1: Create the immediate, private review
+    const privateReviewRef = firestore.collection(`customers/${customerId}/reviews`).doc();
+    transaction.set(privateReviewRef, {
+      bookingId, performerId, userId: customerId, rating, comment,
+      userName: performerSnap.data()!.name || 'Anonymous Performer',
+      userImageUrl: performerSnap.data()!.imageUrl || '',
+      date: FieldValue.serverTimestamp(),
+    });
+
+    // Action 2: Update the master booking document
+    const bookingUpdateData: any = {
+      performerReviewSubmitted: true,
+      performerRatingOfCustomer: rating,
+      performerCommentOnCustomer: comment,
+      performerName: performerSnap.data()!.name,
+      performerImageUrl: performerSnap.data()!.imageUrl,
+      publicReviewsCreated: false,
+    };
     
-    const { db: firestore, FieldValue, Timestamp } = admin;
-    const { bookingId, customerId, rating, comment, userId: performerId } = input;
-
-    validateFirestoreId(bookingId, 'bookingId');
-    validateFirestoreId(customerId, 'customerId');
-    validateFirestoreId(performerId, 'performerId');
-
-    try {
-      const resultMessage = await firestore.runTransaction(async (transaction) => {
-        const bookingDocRef = firestore.collection('bookings').doc(bookingId);
-        const performerDocRef = firestore.collection('performers').doc(performerId);
-
-        let customerDocRef = firestore.collection('customers').doc(customerId);
-        let customerSnap = await transaction.get(customerDocRef);
-
-        if (!customerSnap.exists) {
-          customerDocRef = firestore.collection('users').doc(customerId);
-          customerSnap = await transaction.get(customerDocRef);
-        }
-
-        const [bookingSnap, performerSnap] = await Promise.all([
-          transaction.get(bookingDocRef),
-          transaction.get(performerDocRef),
-        ]);
-
-        if (!bookingSnap.exists) throw new Error("Booking not found.");
-        if (!performerSnap.exists) throw new Error("Performer profile not found.");
-        if (!customerSnap.exists) throw new Error("Customer not found.");
-
-        const bookingData = bookingSnap.data()!;
-        const performerData = performerSnap.data();
-        const customerData = customerSnap.data();
-
-        if (bookingData.performerId !== performerId) throw new Error("You do not have permission to review this booking.");
-        if (bookingData.userId !== customerId) throw new Error("Mismatched booking: The provided customer ID does not match the booking.");
-        if (bookingData.performerReviewSubmitted) throw new Error("You have already reviewed this booking.");
-
-        const bookingUpdateData: any = {
-          performerReviewSubmitted: true,
-          performerRatingOfCustomer: rating,
-          performerCommentOnCustomer: comment,
-        };
-
-        if (bookingData.completedAt instanceof Timestamp) {
-          bookingUpdateData.reviewDeadline = new Timestamp(
-            bookingData.completedAt.seconds + 14 * 24 * 60 * 60,
-            bookingData.completedAt.nanoseconds
-          );
-        }
-
-        transaction.update(bookingDocRef, bookingUpdateData);
-
-        if (bookingData.customerReviewSubmitted) {
-          const newReviewCount = (customerData?.reviewCount || 0) + 1;
-          const newAverageRating = ((customerData?.rating || 0) * (customerData?.reviewCount || 0) + rating) / newReviewCount;
-
-          transaction.update(customerDocRef, {
-            rating: newAverageRating,
-            reviewCount: newReviewCount,
-          });
-
-          const newReviewRef = firestore.collection(`customers/${customerId}/reviews`).doc();
-          transaction.set(newReviewRef, {
-            bookingId,
-            performerId,
-            userId: performerId,
-            userName: performerData?.name || 'Anonymous Performer',
-            userImageUrl: performerData?.imageUrl || '',
-            rating,
-            comment,
-            date: FieldValue.serverTimestamp(),
-          });
-
-          return {
-            title: "Review Submitted!",
-            description: "Both reviews are in! Your feedback is now public.",
-          };
-        } else {
-          return {
-            title: "Review Saved!",
-            description: "Thank you! Your review will be published once the customer leaves their feedback, or after 14 days.",
-          };
-        }
-      });
-
-      return resultMessage;
-    } catch (error: any) {
-      console.error("Error in submitPerformerReviewFlow:", error);
-      throw new Error(error.message || "An unexpected error occurred on the server.");
+    // --- THIS IS THE CRITICAL FIX ---
+    // Ensure completedAt is set, which is needed by the Cloud Function
+    if (!bookingSnap.data()!.completedAt) {
+      bookingUpdateData.completedAt = FieldValue.serverTimestamp();
     }
-  }
-);
+    // --- END OF FIX ---
+    
+    // Set the deadline
+    const completionTime = (bookingSnap.data()!.completedAt || Timestamp.now()) as FirebaseFirestore.Timestamp;
+    bookingUpdateData.reviewDeadline = new Timestamp(completionTime.seconds + (14 * 24 * 60 * 60), completionTime.nanoseconds);
+    
+    transaction.update(bookingDocRef, bookingUpdateData);
+  });
+
+  return { title: "Review Saved!", description: "Thank you for your feedback!" };
+}
