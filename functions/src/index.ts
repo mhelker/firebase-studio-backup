@@ -1,17 +1,16 @@
 // functions/src/index.ts
 import * as admin from "firebase-admin";
 import { onSchedule } from "firebase-functions/v2/scheduler";
-import { onDocumentUpdated } from "firebase-functions/v2/firestore";
+import { onDocumentUpdated, onDocumentWritten } from "firebase-functions/v2/firestore";
 
 admin.initializeApp();
 const db = admin.firestore();
 
-// This is a new, simpler helper function
+// Helper function to publish reviews
 async function publishReviewsForBooking(bookingId: string, bookingData: admin.firestore.DocumentData) {
   const firestore = admin.firestore();
   console.log(`Attempting to publish reviews for booking: ${bookingId}`);
 
-  // Safety check: Do not run if already published
   if (bookingData.publicReviewsCreated === true) {
     console.log(`Skipping booking ${bookingId}: Public reviews already created.`);
     return;
@@ -19,12 +18,11 @@ async function publishReviewsForBooking(bookingId: string, bookingData: admin.fi
 
   const batch = firestore.batch();
   const bookingDocRef = firestore.collection("bookings").doc(bookingId);
-
   const reviewDate = bookingData.completedAt || admin.firestore.FieldValue.serverTimestamp();
 
   if (bookingData.customerReviewSubmitted) {
-    const publicReviewForPerformerRef = firestore.collection("reviews").doc();
-    batch.set(publicReviewForPerformerRef, {
+    const publicReviewRef = firestore.collection("reviews").doc();
+    batch.set(publicReviewRef, {
       bookingId,
       performerId: bookingData.performerId,
       customerId: bookingData.userId,
@@ -38,8 +36,8 @@ async function publishReviewsForBooking(bookingId: string, bookingData: admin.fi
   }
 
   if (bookingData.performerReviewSubmitted) {
-    const publicReviewForCustomerRef = firestore.collection("reviews").doc();
-    batch.set(publicReviewForCustomerRef, {
+    const publicReviewRef = firestore.collection("reviews").doc();
+    batch.set(publicReviewRef, {
       bookingId,
       performerId: bookingData.performerId,
       customerId: bookingData.userId,
@@ -57,12 +55,27 @@ async function publishReviewsForBooking(bookingId: string, bookingData: admin.fi
   console.log(`Successfully published public reviews for booking: ${bookingId}`);
 }
 
-// TRIGGER 1: Check on a schedule (no change needed here)
+// === TRIGGER 1: Check on a schedule ===
 export const checkOverdueReviews = onSchedule("every 24 hours", async (event) => {
-    // ... This function remains the same and will work correctly
+  console.log("Checking for overdue reviews to publish...");
+  const now = admin.firestore.Timestamp.now();
+
+  const overdueBookingsQuery = db.collection("bookings")
+    .where("reviewDeadline", "<=", now)
+    .where("publicReviewsCreated", "==", false);
+
+  const overdueSnaps = await overdueBookingsQuery.get();
+  if (overdueSnaps.empty) {
+    console.log("No overdue reviews to publish.");
+    return;
+  }
+
+  const promises = overdueSnaps.docs.map(doc => publishReviewsForBooking(doc.id, doc.data()));
+  await Promise.all(promises);
+  console.log(`Processed ${overdueSnaps.size} overdue booking(s).`);
 });
 
-// TRIGGER 2: Instant check on update (This is the corrected logic)
+// === TRIGGER 2: Instant check on update ===
 export const onBookingReviewUpdate = onDocumentUpdated("bookings/{bookingId}", async (event) => {
   const afterData = event.data?.after.data();
   const beforeData = event.data?.before.data();
@@ -72,13 +85,40 @@ export const onBookingReviewUpdate = onDocumentUpdated("bookings/{bookingId}", a
     return;
   }
 
-  // Condition: Are both reviews now submitted?
   const bothSubmitted = afterData.customerReviewSubmitted && afterData.performerReviewSubmitted;
-  // Condition: Was this not the case before? (Prevents running twice)
   const wasNotPreviouslyComplete = !(beforeData.customerReviewSubmitted && beforeData.performerReviewSubmitted);
 
   if (bothSubmitted && wasNotPreviouslyComplete) {
-    // We use the data directly from the event to avoid the race condition
     await publishReviewsForBooking(event.params.bookingId, afterData);
+  }
+});
+
+// === TRIGGER 3: Update customer rating on new review ===
+export const updateCustomerRating = onDocumentWritten("customers/{customerId}/reviews/{reviewId}", async (event) => {
+  const customerId = event.params.customerId;
+  console.log(`Review changed for customer ${customerId}. Recalculating rating...`);
+
+  const customerDocRef = db.collection("customers").doc(customerId);
+  const reviewsRef = customerDocRef.collection("reviews");
+  const reviewsSnapshot = await reviewsRef.get();
+
+  let totalRating = 0;
+  const reviewCount = reviewsSnapshot.size;
+
+  reviewsSnapshot.forEach(doc => {
+    totalRating += doc.data().rating;
+  });
+
+  const averageRating = reviewCount > 0 ? totalRating / reviewCount : 0;
+  console.log(`New stats for ${customerId}: Count=${reviewCount}, Avg Rating=${averageRating.toFixed(2)}`);
+
+  try {
+    await customerDocRef.update({
+      rating: averageRating,
+      reviewCount: reviewCount,
+    });
+    console.log(`Successfully updated customer document for ${customerId}.`);
+  } catch (error) {
+    console.error(`Failed to update customer document for ${customerId}:`, error);
   }
 });
