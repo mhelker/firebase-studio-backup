@@ -168,16 +168,16 @@ export default function DashboardPage() {
       const isPastDate = booking.date ? booking.date.toDate() < now : false;
       const status = booking.status || 'pending'; // Default to pending if status is missing
 
-      // Categorization Logic
+      // --- THIS IS THE CORRECTED LOGIC ---
       if (status === 'completed' || status === 'cancelled') {
         past.push(booking);
-      } else if (isPastDate && (status === 'confirmed' || status === 'awaiting_payment')) {
+      } else if (isPastDate && status === 'confirmed') {
         // Automatically consider past, confirmed bookings as completed for review purposes
         past.push({ ...booking, status: 'completed' });
       } else if (status === 'pending') {
         pending.push(booking);
-      } else {
-        // 'confirmed' and 'awaiting_payment' for future dates are upcoming
+      } else { 
+        // This will now correctly handle 'confirmed' bookings for future dates
         upcoming.push(booking);
       }
     });
