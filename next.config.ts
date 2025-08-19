@@ -1,4 +1,5 @@
 import type { NextConfig } from 'next';
+import path from 'path'; // Import the 'path' module
 
 const nextConfig: NextConfig = {
   typescript: {
@@ -40,6 +41,16 @@ const nextConfig: NextConfig = {
   // output: 'export',
 
   webpack(config) {
+    // ** ADD THIS BLOCK TO FIX THE BUILD ERROR **
+    // Forcing the resolution of conflicting template packages
+    config.resolve.alias = {
+      ...config.resolve.alias,
+      'string-template': path.resolve(__dirname, 'node_modules/string-template'),
+      'url-template': path.resolve(__dirname, 'node_modules/url-template'),
+      'uri-templates': path.resolve(__dirname, 'node_modules/uri-templates'),
+    };
+
+    // Your existing webpack configurations are preserved below
     // Add handlebars loader for .js files inside handlebars package
     config.module.rules.push({
       test: /\.js$/,
