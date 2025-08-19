@@ -16,7 +16,7 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { StarRating } from "@/components/star-rating";
 import { useState, useEffect } from "react";
-import { useToast } from "@/hooks/use-toast";
+// import { useToast } from "@/hooks/use-toast"; // --- TEMPORARILY DISABLED
 import { useAuth } from "@/contexts/auth-context";
 import { Loader2, Info, AlertTriangle, Gift, DollarSign } from "lucide-react";
 import { submitReviewAndTip } from "@/ai/flows/submit-review";
@@ -61,7 +61,7 @@ function InnerReviewForm({
   performerId: string;
 }) {
   const { user } = useAuth();
-  const { toast } = useToast();
+  // const { toast } = useToast(); // --- TEMPORARILY DISABLED
   const form = useFormContext<ReviewFormValues>();
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -74,14 +74,16 @@ function InnerReviewForm({
 
   const handleFullSubmit = async (data: ReviewFormValues) => {
     if (!user) {
-      toast({ title: "Not Authenticated", variant: "destructive" });
+      // toast({ title: "Not Authenticated", variant: "destructive" }); // --- TEMPORARILY DISABLED
+      console.error("Not Authenticated");
       return;
     }
     setIsSubmitting(true);
 
     if (isTippingReady) {
       if (!stripe || !elements) {
-        toast({ title: "Payment form not ready", variant: "destructive" });
+        // toast({ title: "Payment form not ready", variant: "destructive" }); // --- TEMPORARILY DISABLED
+        console.error("Payment form not ready");
         setIsSubmitting(false);
         return;
       }
@@ -90,7 +92,8 @@ function InnerReviewForm({
         redirect: 'if_required',
       });
       if (paymentError) {
-        toast({ title: "Payment Error", description: paymentError.message || "An error occurred.", variant: "destructive" });
+        // toast({ title: "Payment Error", description: paymentError.message || "An error occurred.", variant: "destructive" }); // --- TEMPORARILY DISABLED
+        console.error("Payment Error:", paymentError.message);
         setIsSubmitting(false);
         return;
       }
@@ -105,10 +108,12 @@ function InnerReviewForm({
         userId: user.uid,
         tipAmount: data.tipAmount || 0,
       });
-      toast({ title: result.title, description: result.description });
+      // toast({ title: result.title, description: result.description }); // --- TEMPORARILY DISABLED
+      console.log("Review submitted:", result.title);
       onReviewSubmitted();
     } catch (error: any) {
-      toast({ title: "Submission Error", description: error.message || "An error occurred.", variant: "destructive" });
+      // toast({ title: "Submission Error", description: error.message || "An error occurred.", variant: "destructive" }); // --- TEMPORARILY DISABLED
+      console.error("Submission Error:", error.message);
     } finally {
       setIsSubmitting(false);
     }
@@ -116,7 +121,6 @@ function InnerReviewForm({
 
   return (
     <form onSubmit={form.handleSubmit(handleFullSubmit)} className="space-y-6">
-      {/* --- THIS SECTION IS NOW FULLY EXPANDED AND CORRECT --- */}
       <FormField
         control={form.control}
         name="rating"
@@ -162,7 +166,6 @@ function InnerReviewForm({
           </FormItem>
         )}
       />
-      {/* --- END OF EXPANDED SECTION --- */}
       
       {isTippingReady && (
         <div className="space-y-4">
@@ -199,8 +202,14 @@ export function ReviewForm({ performerId, bookingId, onReviewSubmitted }: Review
   const isTippingReady = !!clientSecret && !isDemoMode;
 
   const handleProceedToPayment = async () => {
-    const tipAmount = form.getValues("tipAmount") || 0;
-    if (tipAmount <= 0) return;
+    const tipValue = form.getValues("tipAmount");
+    const tipAmount = parseFloat(tipValue as any || '0');
+    if (isNaN(tipAmount) || tipAmount < 0.50) {
+      if (tipAmount > 0) {
+        setError("Tip amount must be at least $0.50.");
+      }
+      return;
+    }
 
     setIsLoadingSecret(true);
     setError(null);
