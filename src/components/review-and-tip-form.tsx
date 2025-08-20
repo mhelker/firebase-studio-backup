@@ -19,7 +19,8 @@ import { useState, useEffect } from "react";
 // import { useToast } from "@/hooks/use-toast"; // --- TEMPORARILY DISABLED
 import { useAuth } from "@/contexts/auth-context";
 import { Loader2, Info, AlertTriangle, Gift, DollarSign } from "lucide-react";
-import { submitReviewAndTip } from "@/ai/flows/submit-review";
+// --- CHANGE 1: REMOVED THE SERVER ACTION IMPORT ---
+// import { submitReviewAndTip } from "@/ai/flows/submit-review";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { loadStripe } from '@stripe/stripe-js';
 import { Elements, PaymentElement, useStripe, useElements } from '@stripe/react-stripe-js';
@@ -99,15 +100,27 @@ function InnerReviewForm({
       }
     }
 
+    // --- CHANGE 2: REPLACED THE SERVER ACTION WITH A FETCH CALL TO THE NEW API ROUTE ---
     try {
-      const result = await submitReviewAndTip({
-        bookingId,
-        performerId,
-        rating: data.rating,
-        comment: data.comment,
-        userId: user.uid,
-        tipAmount: data.tipAmount || 0,
+      const response = await fetch('/api/submit-review', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          bookingId,
+          performerId,
+          rating: data.rating,
+          comment: data.comment,
+          userId: user.uid,
+          tipAmount: data.tipAmount || 0,
+        }),
       });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.message || 'Failed to submit review.');
+      }
+
       // toast({ title: result.title, description: result.description }); // --- TEMPORARILY DISABLED
       console.log("Review submitted:", result.title);
       onReviewSubmitted();
