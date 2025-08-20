@@ -15,14 +15,13 @@ import {
 } from "@/components/ui/form";
 import { Textarea } from "@/components/ui/textarea";
 import { StarRating } from "@/components/star-rating";
-import { useState, useEffect } from "react";
+import { useState } from "react";
 // import { useToast } from "@/hooks/use-toast"; // --- TEMPORARILY DISABLED
 import { useAuth } from "@/contexts/auth-context";
 import { Loader2, Info, AlertTriangle, Gift, DollarSign } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { loadStripe } from '@stripe/stripe-js';
 import { Elements, PaymentElement, useStripe, useElements } from '@stripe/react-stripe-js';
-import { createTipIntent } from "@/ai/flows/create-tip-intent";
 import { Input } from "./ui/input";
 
 const reviewSchema = z.object({
@@ -224,11 +223,22 @@ export function ReviewForm({ performerId, bookingId, onReviewSubmitted }: Review
     setIsLoadingSecret(true);
     setError(null);
     try {
-      const intent = await createTipIntent({ bookingId, tipAmount });
-      if (intent.isDemoMode) {
-        setIsDemoMode(true);
-        setClientSecret(null);
-      } else if (intent.clientSecret) {
+      // Point to the correct, existing API route (/api/createTipIntent)
+      const response = await fetch('/api/createTipIntent', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        // Send 'amount' to match what the API route expects
+        body: JSON.stringify({ amount: tipAmount }),
+      });
+
+      const intent = await response.json();
+      
+      if (!response.ok) {
+        throw new Error(intent.error || "Failed to create tip intent.");
+      }
+
+      // Handle the correct clientSecret from the existing API
+      if (intent.clientSecret) {
         setIsDemoMode(false);
         setClientSecret(intent.clientSecret);
       } else {

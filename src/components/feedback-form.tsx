@@ -16,7 +16,8 @@ import { useToast } from '@/hooks/use-toast';
 import { useState } from 'react';
 import { Loader2, Send } from 'lucide-react';
 import { useAuth } from '@/contexts/auth-context';
-import { submitFeedbackAction } from '@/actions/submitFeedbackAction';
+// --- CHANGE 1: REMOVED THE BROKEN SERVER ACTION IMPORT ---
+// import { submitFeedbackAction } from '@/actions/submitFeedbackAction';
 
 const feedbackFormSchema = z.object({
   feedback: z.string().min(10, {
@@ -51,8 +52,26 @@ export function FeedbackForm() {
     }
 
     setIsSubmitting(true);
+    // --- CHANGE 2: REPLACED THE SERVER ACTION WITH A STABLE FETCH CALL ---
     try {
-      await submitFeedbackAction({ feedback: data.feedback });
+      // Get the Firebase ID token from the current user
+      const token = await user.getIdToken();
+
+      const response = await fetch('/api/submit-feedback', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          // Send the token for server-side authentication
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify({ feedback: data.feedback }),
+      });
+
+      if (!response.ok) {
+        const errorResult = await response.json();
+        throw new Error(errorResult.message || 'Failed to submit feedback.');
+      }
+      
       toast({
         title: 'Feedback Sent!',
         description: 'Thank you for your suggestion. We appreciate it!',

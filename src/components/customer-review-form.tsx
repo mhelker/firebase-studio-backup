@@ -1,4 +1,3 @@
-
 "use client";
 
 import React, { useState } from "react";
@@ -19,7 +18,8 @@ import { StarRating } from "@/components/star-rating";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/auth-context";
 import { Loader2 } from "lucide-react";
-import { submitPerformerReview } from "@/ai/flows/submit-review";
+// --- CHANGE 1: REMOVED THE BROKEN SERVER ACTION IMPORT ---
+// import { submitPerformerReview } from "@/ai/flows/submit-review";
 
 const reviewSchema = z.object({
   rating: z.number().min(1, "Please select a rating.").max(5),
@@ -66,15 +66,26 @@ export function CustomerReviewForm({
     }
 
     setIsSubmitting(true);
+    // --- CHANGE 2: REPLACED THE SERVER ACTION WITH A FETCH CALL TO THE NEW API ROUTE ---
     try {
-      const result = await submitPerformerReview({
-        bookingId,
-        customerId,
-        rating: data.rating,
-        comment: data.comment,
-        userId: user.uid,
+      const response = await fetch('/api/submit-performer-review', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          bookingId,
+          customerId,
+          rating: data.rating,
+          comment: data.comment,
+          userId: user.uid, // This is the performer's ID
+        }),
       });
 
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.message || 'Failed to submit performer review.');
+      }
+      
       toast({ title: result.title, description: result.description });
       onReviewSubmitted();
     } catch (error: any) {
