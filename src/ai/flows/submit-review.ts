@@ -1,11 +1,13 @@
 // src/ai/flows/submit-review.ts
 'use server';
 
-import { ai } from '@/ai/genkit';
-import { z } from 'genkit';
+// --- FIX START ---
+// Remove Genkit imports and import Zod directly
+import { z } from 'zod';
+// --- FIX END ---
 import type { Performer } from '@/types';
 
-// Lazily import firebase-admin
+// Lazily import firebase-admin (This part is already correct)
 async function getAdminFirestore() {
   if (!process.env.FIREBASE_SERVICE_ACCOUNT) return null;
   const { db, FieldValue, Timestamp } = await import('@/lib/firebase-admin-lazy');
