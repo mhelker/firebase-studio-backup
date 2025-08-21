@@ -1,46 +1,51 @@
-'use server';
+// src/app/api/recommend-performers/route.ts
 
-import { GoogleGenerativeAI, GenerationConfig } from '@google/generative-ai'; // Import GenerationConfig
+import { NextRequest, NextResponse } from 'next/server';
+import { GoogleGenerativeAI, GenerationConfig } from '@google/generative-ai';
 import { z } from 'zod';
 import { searchPerformers } from '@/services/performer-service';
-import type { Performer } from '@/types';
 
-// Zod schemas remain the same
 const RecommendPerformersInputSchema = z.object({
-  eventDescription: z.string(), desiredMood: z.string(),
-  budget: z.number(), talentType: z.string(),
+  eventDescription: z.string(),
+  desiredMood: z.string(),
+  budget: z.number(),
+  talentType: z.string(),
 });
-export type RecommendPerformersInput = z.infer<typeof RecommendPerformersInputSchema>;
+
 const AiRecommendedPerformerSchema = z.object({
-  id: z.string(), name: z.string(), talentTypes: z.array(z.string()),
-  description: z.string(), price: z.number(), availability: z.string(),
+  id: z.string(),
+  name: z.string(),
+  talentTypes: z.array(z.string()),
+  description: z.string(),
+  price: z.number(),
+  availability: z.string(),
   recommendationReason: z.string(),
 });
+
 const RecommendPerformersOutputSchema = z.array(AiRecommendedPerformerSchema);
 export type RecommendPerformersOutput = z.infer<typeof RecommendPerformersOutputSchema>;
 
-export async function recommendPerformers(input: RecommendPerformersInput): Promise<RecommendPerformersOutput> {
+export async function POST(req: NextRequest) {
   try {
-    const validatedInput = RecommendPerformersInputSchema.parse(input);
+    const body = await req.json();
+    const validatedInput = RecommendPerformersInputSchema.parse(body);
 
     const searchCriteria: { talentType?: string } = {};
     if (validatedInput.talentType && validatedInput.talentType.toLowerCase() !== 'any' && validatedInput.talentType.toLowerCase() !== 'all') {
       searchCriteria.talentType = validatedInput.talentType;
     }
     const availablePerformers = await searchPerformers(searchCriteria);
-    if (availablePerformers.length === 0) return [];
+    if (availablePerformers.length === 0) {
+      return NextResponse.json([]);
+    }
 
-    // --- FINAL ATTEMPT: More robust initialization ---
     const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
     
-    // Explicitly define generation config to ensure JSON output
     const generationConfig: GenerationConfig = {
       responseMimeType: "application/json",
     };
     
-    // Use the latest, most powerful model available.
     const model = genAI.getGenerativeModel({ model: "gemini-1.5-pro-latest", generationConfig });
-    // --- END OF FINAL ATTEMPT ---
 
     const prompt = `Based on the following list of available performers and the client's event details, recommend up to 3 performers.
     
@@ -57,14 +62,17 @@ export async function recommendPerformers(input: RecommendPerformersInput): Prom
     If none are a good fit, return an empty array [].`;
 
     const result = await model.generateContent(prompt);
-    // When using JSON output mode, we parse directly from response.text()
     const responseText = result.response.text();
     const parsedOutput = JSON.parse(responseText);
     
-    return RecommendPerformersOutputSchema.parse(parsedOutput);
+    const finalResult = RecommendPerformersOutputSchema.parse(parsedOutput);
+    return NextResponse.json(finalResult);
 
-  } catch (error) {
-    console.error("Error in recommendPerformers flow:", error);
-    throw new Error("The AI agent failed to generate recommendations.");
+  } catch (error: any) {
+    console.error("Error in recommendPerformers API route:", error);
+    return NextResponse.json(
+      { message: "The AI agent failed to generate recommendations." },
+      { status: 500 }
+    );
   }
 }

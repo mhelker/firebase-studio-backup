@@ -1,4 +1,3 @@
-
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -16,12 +15,13 @@ import {
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { recommendPerformers, type RecommendPerformersOutput } from "@/ai/flows/recommend-performers";
 import type { AiRecommendedPerformer } from "@/types";
 import { PerformerCard } from "@/components/performer-card";
 import React, { useState } from "react";
 import { Loader2, Sparkles } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+// --- CHANGE 1: REMOVED THE BROKEN SERVER ACTION IMPORT ---
+// import { recommendPerformers, type RecommendPerformersOutput } from "@/ai/flows/recommend-performers";
 
 const recommendationFormSchema = z.object({
   eventDescription: z.string().min(10, "Event description must be at least 10 characters."),
@@ -55,18 +55,28 @@ export function RecommendationForm() {
     setIsLoading(true);
     setError(null);
     setRecommendations([]);
+    // --- CHANGE 2: REPLACED THE SERVER ACTION WITH A STABLE FETCH CALL ---
     try {
-      // The result from the AI now includes the real performer ID and a recommendation reason
-      const result: RecommendPerformersOutput = await recommendPerformers(data);
+      const response = await fetch('/api/recommend-performers', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.message || "Failed to fetch recommendations.");
+      }
       
-      const mappedResults: AiRecommendedPerformer[] = result.map((p) => ({
+      const mappedResults: AiRecommendedPerformer[] = result.map((p: any) => ({
         ...p,
         imageUrl: `https://placehold.co/300x200.png?text=${encodeURIComponent(p.name)}`,
-        dataAiHint: p.talentTypes && p.talentTypes.length > 0 ? p.talentTypes.map(t => t.toLowerCase()).join(' ') : 'performer',
+        dataAiHint: p.talentTypes && p.talentTypes.length > 0 ? p.talentTypes.map((t: string) => t.toLowerCase()).join(' ') : 'performer',
         rating: Math.random() * 2 + 3, // Keep a mock rating for display if needed
       }));
       setRecommendations(mappedResults);
-    } catch (e) {
+    } catch (e: any) {
       console.error("Error fetching recommendations:", e);
       setError("Failed to fetch recommendations. The AI tool might have encountered an issue.");
     } finally {
