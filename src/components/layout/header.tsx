@@ -1,4 +1,3 @@
-
 "use client";
 
 import Link from 'next/link';
@@ -9,6 +8,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Menu, Zap, LogIn, LogOut, UserCircle, CalendarDays, Lightbulb } from 'lucide-react';
 import { useAuth } from '@/contexts/auth-context';
 import { usePathname } from 'next/navigation';
+import { cn } from '@/lib/utils';
 
 export function Header() {
   const { user, loading, logOut, imageUrl } = useAuth();
@@ -19,9 +19,12 @@ export function Header() {
     { href: '/performers', label: 'Performers', icon: <UserCircle className="md:hidden mr-2 h-5 w-5"/> },
     { href: '/recommendations', label: 'AI Picks', icon: <Zap className="md:hidden mr-2 h-5 w-5"/> },
     { href: '/suggestions', label: 'Suggestions', icon: <Lightbulb className="md:hidden mr-2 h-5 w-5"/> },
+    { href: '/book-talent', label: 'Book Talent', icon: <Zap className="md:hidden mr-2 h-5 w-5"/> },
   ];
   
   const userInitial = user?.email?.charAt(0).toUpperCase() || 'U';
+
+  const isUserPageActive = pathname === '/profile' || pathname === '/bookings';
 
   return (
     <header className="bg-card shadow-md sticky top-0 z-50">
@@ -41,19 +44,22 @@ export function Header() {
               <Link href={item.href}>{item.label}</Link>
             </Button>
           ))}
-          {/* --- THE FIX IS HERE --- */}
-          {/* Changed variant to "ghost" and adjusted hover classes */}
-          <Button asChild variant="ghost" className="hover:bg-accent hover:text-accent-foreground ml-2">
-            <Link href="/performers" suppressHydrationWarning>Book Talent</Link>
-          </Button>
-          {/* --- END OF FIX --- */}
-
+          
           {loading ? (
             <div className="w-8 h-8 rounded-full bg-muted animate-pulse ml-2" />
           ) : user ? (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="ghost" className="relative h-10 w-10 rounded-full ml-2" suppressHydrationWarning>
+                {/* --- THIS IS THE FINAL, CORRECT FIX --- */}
+                {/* This uses "ring-ring" to get the vibrant blue color, and preserves the dropdown menu */}
+                <Button 
+                  variant="ghost" 
+                  className={cn(
+                    "relative h-10 w-10 rounded-full ml-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
+                    isUserPageActive && "ring-2 ring-ring ring-offset-2 ring-offset-background"
+                  )} 
+                  suppressHydrationWarning
+                >
                   <Avatar className="h-9 w-9">
                     <AvatarImage src={imageUrl || ''} alt="User avatar" data-ai-hint="person portrait" />
                     <AvatarFallback>{userInitial}</AvatarFallback>
@@ -90,6 +96,7 @@ export function Header() {
           )}
         </nav>
 
+        {/* --- MOBILE MENU --- */}
         <div className="md:hidden">
           <Sheet>
             <SheetTrigger asChild>
@@ -140,9 +147,6 @@ export function Header() {
                     </Link>
                   </Button>
                 )}
-                 <Button asChild className="bg-accent hover:bg-accent/90 text-accent-foreground w-full text-md mt-4 py-3">
-                  <Link href="/performers" suppressHydrationWarning>Book Talent Now</Link>
-                </Button>
               </div>
             </SheetContent>
           </Sheet>

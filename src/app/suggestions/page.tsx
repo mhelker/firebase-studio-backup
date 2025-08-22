@@ -1,4 +1,3 @@
-
 'use client';
 
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -28,8 +27,8 @@ import { format } from 'date-fns';
 import Link from 'next/link';
 import { isAdmin } from '@/lib/admin-config';
 
-// **NEW**: Import server actions, not flows
-import { submitSuggestionAction, commentOnSuggestionAction } from '@/actions/suggestionActions';
+// --- CHANGE 1: REMOVED THE SERVER ACTION IMPORT ---
+// import { submitSuggestionAction, commentOnSuggestionAction } from '@/actions/suggestionActions';
 
 const suggestionFormSchema = z.object({
   suggestion: z.string().min(10, {
@@ -47,15 +46,30 @@ type CommentFormValues = z.infer<typeof commentFormSchema>;
 
 
 function CommentForm({ suggestionId, onCommented }: { suggestionId: string; onCommented: () => void }) {
+  const { user } = useAuth(); // Get user for auth
   const { toast } = useToast();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const form = useForm<CommentFormValues>({ resolver: zodResolver(commentFormSchema) });
 
   async function onSubmit(data: CommentFormValues) {
     setIsSubmitting(true);
+    // --- CHANGE 2: REPLACED THE SERVER ACTION WITH A FETCH CALL ---
     try {
-      // Call server action here
-      await commentOnSuggestionAction({ suggestionId, comment: data.comment });
+      if (!user) throw new Error("Authentication is required.");
+      const token = await user.getIdToken();
+
+      const response = await fetch('/api/comment-on-suggestion', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify({ suggestionId, comment: data.comment }),
+      });
+      
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.message || "Failed to submit comment.");
+
       toast({ title: "Comment Submitted!", description: "Thank you for contributing." });
       onCommented();
     } catch (error: any) {
@@ -130,9 +144,21 @@ export default function SuggestionsPage() {
       return;
     }
     setIsSubmitting(true);
+    // --- CHANGE 3: REPLACED THE SERVER ACTION WITH A FETCH CALL ---
     try {
-      // Call server action here
-      await submitSuggestionAction({ suggestion: data.suggestion });
+      const token = await user.getIdToken();
+      const response = await fetch('/api/submit-suggestion', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify({ suggestion: data.suggestion }),
+      });
+      
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.message || "Failed to submit suggestion.");
+
       toast({
         title: "Suggestion Submitted!",
         description: "It has been added to the public board below.",
