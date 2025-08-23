@@ -24,7 +24,8 @@ export function Header() {
   
   const userInitial = user?.email?.charAt(0).toUpperCase() || 'U';
 
-  const isUserPageActive = pathname === '/profile' || pathname === '/bookings';
+  // --- CHANGE 1: THE LOGIC IS UPDATED HERE ---
+  const isUserPageActive = pathname === '/profile' || pathname === '/bookings' || pathname === '/dashboard';
 
   return (
     <header className="bg-card shadow-md sticky top-0 z-50">
@@ -50,8 +51,6 @@ export function Header() {
           ) : user ? (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                {/* --- THIS IS THE FINAL, CORRECT FIX --- */}
-                {/* This uses "ring-ring" to get the vibrant blue color, and preserves the dropdown menu */}
                 <Button 
                   variant="ghost" 
                   className={cn(
@@ -76,6 +75,10 @@ export function Header() {
                   </div>
                 </DropdownMenuLabel>
                 <DropdownMenuSeparator />
+                {/* --- CHANGE 2: THE DASHBOARD LINK IS ADDED HERE --- */}
+                <DropdownMenuItem asChild>
+                  <Link href="/dashboard"><UserCircle className="mr-2 h-4 w-4" /> Dashboard</Link>
+                </DropdownMenuItem>
                 <DropdownMenuItem asChild>
                   <Link href="/profile"><UserCircle className="mr-2 h-4 w-4" /> Profile</Link>
                 </DropdownMenuItem>
@@ -130,6 +133,7 @@ export function Header() {
                     <div className="w-full h-10 rounded-md bg-muted animate-pulse" />
                   ) : user ? (
                   <div className="space-y-3">
+                    {/* You may also want to add a Dashboard link here for mobile */}
                     <Button variant="ghost" className="w-full justify-start text-md py-3" asChild>
                       <Link href="/profile"><UserCircle className="mr-2 h-5 w-5" /> Profile</Link>
                     </Button>
