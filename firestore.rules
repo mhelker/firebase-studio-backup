@@ -1,4 +1,5 @@
 rules_version = '2';
+
 service cloud.firestore {
   match /databases/{database}/documents {
 
@@ -12,9 +13,9 @@ service cloud.firestore {
     }
 
     function isAdmin() {
-      // You must replace this placeholder with your actual Firebase User ID (UID)
-      // for admin privileges to work.
-      let adminUIDs = ['csW7YstynkakD51lTaqJjlRuSCp2'];
+      // --- THIS IS THE FIX ---
+      // Your new production User ID has been added here.
+      let adminUIDs = ['vygqDhG0kRQx4wDrBaYV8H2q1n12'];
       return request.auth.uid in adminUIDs;
     }
     
@@ -40,7 +41,7 @@ service cloud.firestore {
         allow read: if true;
         
         // CREATE/UPDATE/DELETE: Not allowed directly from the client.
-        // This must be handled by a secure backend function (Genkit Flow)
+        // This must be handled by a secure backend function (API Route)
         // to prevent misuse.
         allow write: if false; 
       }
@@ -50,8 +51,8 @@ service cloud.firestore {
     //              Customers
     // ==========================================
     match /customers/{userId} {
-      // READ: Anyone can read public customer data like name, photo, and rating.
-      allow read: if true;
+      // READ: A user can only read their own customer document for privacy.
+      allow read: if isSignedIn() && isOwner(userId);
       
       // CREATE/UPDATE: A user can only write to their own customer document.
       allow write: if isSignedIn() && isOwner(userId);
@@ -62,7 +63,7 @@ service cloud.firestore {
         allow read: if true;
         
         // CREATE/UPDATE/DELETE: Not allowed directly from the client.
-        // Must be handled by a secure backend function (Genkit Flow).
+        // Must be handled by a secure backend function (API Route).
         allow write: if false;
       }
     }
@@ -76,7 +77,7 @@ service cloud.firestore {
       allow read: if isSignedIn() && (isOwner(resource.data.userId) || isOwner(resource.data.performerId));
       
       // CREATE: Only a signed-in user can create a booking.
-      // The `userId` in the booking data must match their own UID.
+      // The `userId` in the booking data must also match their own UID.
       allow create: if isSignedIn() && isOwner(request.resource.data.userId);
       
       // UPDATE: A booking can be updated by:
@@ -96,11 +97,10 @@ service cloud.firestore {
       allow read: if isSignedIn() && isAdmin();
       
       // CREATE: Any signed-in user can submit feedback.
-      // This is handled by a Genkit Flow which enforces auth, but this rule provides a backup.
       allow create: if isSignedIn();
       
       // UPDATE/DELETE: Not allowed from the client.
-      allow write: if false;
+      allow update, delete: if false;
     }
     
     // ==========================================
