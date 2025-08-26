@@ -2,7 +2,7 @@
 
 import { db } from '@/lib/firebase';
 import type { Performer } from '@/types';
-import { collection, getDocs, query, where, limit, orderBy, QueryConstraint, Timestamp } from 'firebase/firestore'; // Import Timestamp
+import { collection, getDocs, query, where, limit, orderBy, QueryConstraint, Timestamp } from 'firebase/firestore';
 
 interface SearchCriteria {
     talentType?: string;
@@ -12,7 +12,13 @@ interface SearchCriteria {
 export async function searchPerformers(criteria: SearchCriteria): Promise<Performer[]> {
   try {
     const performersCollection = collection(db, 'performers');
-    const constraints: QueryConstraint[] = [];
+    
+    // --- THIS IS THE FIX ---
+    // We start our query constraints by ensuring we only get active performers.
+    // The `"!="` operator correctly includes performers who don't have the `isActive` field yet.
+    const constraints: QueryConstraint[] = [
+        where('isActive', '!=', false)
+    ];
 
     const { talentType, searchTerm } = criteria;
     
@@ -20,18 +26,16 @@ export async function searchPerformers(criteria: SearchCriteria): Promise<Perfor
         constraints.push(where('talentTypes', 'array-contains', talentType));
     }
     
+    // Add the rest of the constraints
     constraints.push(orderBy('rating', 'desc'));
-    constraints.push(limit(15)); // Limit to a smaller number to conserve AI tokens.
+    constraints.push(limit(15));
 
     const q = query(performersCollection, ...constraints);
     const querySnapshot = await getDocs(q);
 
-    // --- THE FIX IS HERE ---
-    // We will now manually process each document to ensure all data is "plain"
     let performers = querySnapshot.docs.map((doc) => {
       const data = doc.data();
       
-      // Check if createdAt is a Firestore Timestamp and convert it
       const createdAt = data.createdAt instanceof Timestamp 
         ? data.createdAt.toDate().toISOString() 
         : data.createdAt;
@@ -39,11 +43,11 @@ export async function searchPerformers(criteria: SearchCriteria): Promise<Perfor
       return { 
         id: doc.id, 
         ...data,
-        createdAt, // Overwrite the original createdAt with our plain string version
+        createdAt,
       } as Performer;
     });
 
-    // Client-side filtering for search term
+    // Client-side filtering for search term remains the same
     if (searchTerm) {
         const lowercasedSearchTerm = searchTerm.toLowerCase();
         performers = performers.filter(performer => {

@@ -13,8 +13,6 @@ service cloud.firestore {
     }
 
     function isAdmin() {
-      // --- THIS IS THE FIX ---
-      // Your new production User ID has been added here.
       let adminUIDs = ['vygqDhG0kRQx4wDrBaYV8H2q1n12'];
       return request.auth.uid in adminUIDs;
     }
@@ -29,8 +27,9 @@ service cloud.firestore {
       // CREATE: Only a signed-in user can create a performer profile for themselves.
       allow create: if isSignedIn() && isOwner(performerId);
       
-      // UPDATE: Only the performer can update their own profile.
-      allow update: if isSignedIn() && isOwner(performerId);
+      // --- CHANGE 1: THE UPDATE RULE IS MODIFIED HERE ---
+      // UPDATE: Only the performer can update their own profile, but they CANNOT change their 'isActive' status.
+      allow update: if isSignedIn() && isOwner(performerId) && request.resource.data.isActive == resource.data.isActive;
       
       // DELETE: Not allowed from the client for safety.
       allow delete: if false;
@@ -40,9 +39,7 @@ service cloud.firestore {
         // READ: Anyone can read reviews for a performer.
         allow read: if true;
         
-        // CREATE/UPDATE/DELETE: Not allowed directly from the client.
-        // This must be handled by a secure backend function (API Route)
-        // to prevent misuse.
+        // This is handled by a secure API Route now.
         allow write: if false; 
       }
     }
@@ -54,16 +51,22 @@ service cloud.firestore {
       // READ: A user can only read their own customer document for privacy.
       allow read: if isSignedIn() && isOwner(userId);
       
-      // CREATE/UPDATE: A user can only write to their own customer document.
-      allow write: if isSignedIn() && isOwner(userId);
+      // CREATE: A user can only create their own customer document.
+      allow create: if isSignedIn() && isOwner(userId);
+      
+      // --- CHANGE 2: THE WRITE RULE IS SPLIT AND UPDATE IS MODIFIED ---
+      // UPDATE: A user can update their own profile, but they CANNOT change their 'isActive' status.
+      allow update: if isSignedIn() && isOwner(userId) && request.resource.data.isActive == resource.data.isActive;
+
+      // DELETE: Not allowed from the client.
+      allow delete: if false;
 
       // SUBCOLLECTION: Reviews for a customer
       match /reviews/{reviewId} {
         // READ: Anyone can read reviews for a customer.
         allow read: if true;
         
-        // CREATE/UPDATE/DELETE: Not allowed directly from the client.
-        // Must be handled by a secure backend function (API Route).
+        // This is handled by a secure API Route now.
         allow write: if false;
       }
     }
