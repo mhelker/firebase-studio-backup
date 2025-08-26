@@ -155,11 +155,9 @@ export default function ProfilePage() {
       const customerDocRef = doc(db, "customers", userId);
       batch.set(customerDocRef, { imageUrl: downloadURL }, { merge: true });
 
+      // We also update the performer doc, if it exists. The batch handles this safely.
       const performerDocRef = doc(db, "performers", userId);
-      const performerSnap = await getDoc(performerDocRef);
-      if (performerSnap.exists()) {
-        batch.update(performerDocRef, { imageUrl: downloadURL });
-      }
+      batch.update(performerDocRef, { imageUrl: downloadURL });
 
       await batch.commit();
 
