@@ -13,6 +13,7 @@ service cloud.firestore {
     }
 
     function isAdmin() {
+      // Your production User ID is correctly here.
       let adminUIDs = ['vygqDhG0kRQx4wDrBaYV8H2q1n12'];
       return request.auth.uid in adminUIDs;
     }
@@ -27,9 +28,8 @@ service cloud.firestore {
       // CREATE: Only a signed-in user can create a performer profile for themselves.
       allow create: if isSignedIn() && isOwner(performerId);
       
-      // --- CHANGE 1: THE UPDATE RULE IS MODIFIED HERE ---
-      // UPDATE: Only the performer can update their own profile, but they CANNOT change their 'isActive' status.
-      allow update: if isSignedIn() && isOwner(performerId) && request.resource.data.isActive == resource.data.isActive;
+      // UPDATE: Only the performer can update their own profile.
+      allow update: if isSignedIn() && isOwner(performerId);
       
       // DELETE: Not allowed from the client for safety.
       allow delete: if false;
@@ -54,9 +54,9 @@ service cloud.firestore {
       // CREATE: A user can only create their own customer document.
       allow create: if isSignedIn() && isOwner(userId);
       
-      // --- CHANGE 2: THE WRITE RULE IS SPLIT AND UPDATE IS MODIFIED ---
-      // UPDATE: A user can update their own profile, but they CANNOT change their 'isActive' status.
-      allow update: if isSignedIn() && isOwner(userId) && request.resource.data.isActive == resource.data.isActive;
+      // --- THIS IS THE FINAL FIX ---
+      // UPDATE: A user can update their own profile (e.g., to add an imageUrl).
+      allow update: if isSignedIn() && isOwner(userId);
 
       // DELETE: Not allowed from the client.
       allow delete: if false;
@@ -84,8 +84,8 @@ service cloud.firestore {
       allow create: if isSignedIn() && isOwner(request.resource.data.userId);
       
       // UPDATE: A booking can be updated by:
-      // 1. The customer who made it (e.g., to cancel before confirmation).
-      // 2. The performer who is booked (e.g., to accept/decline/complete).
+      // 1. The customer who made it.
+      // 2. The performer who is booked.
       allow update: if isSignedIn() && (isOwner(resource.data.userId) || isOwner(resource.data.performerId));
       
       // DELETE: Not allowed from the client for safety. Cancel by updating status.
