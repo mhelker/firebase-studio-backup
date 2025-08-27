@@ -63,11 +63,9 @@ export default function ProfilePage() {
           const customerData = { id: customerSnap.id, ...customerSnap.data() } as Customer;
           setCustomerProfile(customerData);
         } else {
-          // This is a critical fallback. If a user exists in Auth but not Firestore,
-          // we should log an error.
           console.error(`CRITICAL: No customer document found for authenticated user ${user.uid}`);
           toast({ title: "Error", description: "Could not find your profile data. The document may be missing.", variant: "destructive" });
-          setCustomerProfile(null); // Explicitly set to null on failure
+          setCustomerProfile(null);
         }
 
       } catch (error) {
@@ -155,9 +153,12 @@ export default function ProfilePage() {
       const customerDocRef = doc(db, "customers", userId);
       batch.set(customerDocRef, { imageUrl: downloadURL }, { merge: true });
 
-      // We also update the performer doc, if it exists. The batch handles this safely.
-      const performerDocRef = doc(db, "performers", userId);
-      batch.update(performerDocRef, { imageUrl: downloadURL });
+      // --- THIS IS THE FINAL FIX ---
+      // Only try to update the performer document IF a performer profile exists.
+      if (performerProfile) {
+        const performerDocRef = doc(db, "performers", userId);
+        batch.update(performerDocRef, { imageUrl: downloadURL });
+      }
 
       await batch.commit();
 
@@ -206,8 +207,6 @@ export default function ProfilePage() {
     );
   }
   
-  // This is the most likely cause of the blank page. If customerProfile is null,
-  // the page will stop rendering here.
   if (!customerProfile) {
      return (
         <div className="container mx-auto py-8 text-center">
