@@ -13,7 +13,6 @@ service cloud.firestore {
     }
 
     function isAdmin() {
-      // Your production User ID is correctly here.
       let adminUIDs = ['vygqDhG0kRQx4wDrBaYV8H2q1n12'];
       return request.auth.uid in adminUIDs;
     }
@@ -22,24 +21,17 @@ service cloud.firestore {
     //              Performers
     // ==========================================
     match /performers/{performerId} {
-      // READ: Anyone can view a performer's profile.
-      allow read: if true;
+      // THIS IS THE FIX: Explicitly allow public queries (list) and single reads (get).
+      allow get, list: if true;
       
-      // CREATE: Only a signed-in user can create a performer profile for themselves.
+      // Write rules remain the same.
       allow create: if isSignedIn() && isOwner(performerId);
-      
-      // UPDATE: Only the performer can update their own profile.
       allow update: if isSignedIn() && isOwner(performerId);
-      
-      // DELETE: Not allowed from the client for safety.
       allow delete: if false;
 
       // SUBCOLLECTION: Reviews for a performer
       match /reviews/{reviewId} {
-        // READ: Anyone can read reviews for a performer.
         allow read: if true;
-        
-        // This is handled by a secure API Route now.
         allow write: if false; 
       }
     }
@@ -50,23 +42,13 @@ service cloud.firestore {
     match /customers/{userId} {
       // READ: A user can only read their own customer document for privacy.
       allow read: if isSignedIn() && isOwner(userId);
-      
-      // CREATE: A user can only create their own customer document.
       allow create: if isSignedIn() && isOwner(userId);
-      
-      // --- THIS IS THE FINAL FIX ---
-      // UPDATE: A user can update their own profile (e.g., to add an imageUrl).
       allow update: if isSignedIn() && isOwner(userId);
-
-      // DELETE: Not allowed from the client.
       allow delete: if false;
 
       // SUBCOLLECTION: Reviews for a customer
       match /reviews/{reviewId} {
-        // READ: Anyone can read reviews for a customer.
         allow read: if true;
-        
-        // This is handled by a secure API Route now.
         allow write: if false;
       }
     }
@@ -75,20 +57,9 @@ service cloud.firestore {
     //              Bookings
     // ==========================================
     match /bookings/{bookingId} {
-      // READ: A user can read a booking if they are the customer who made it,
-      // or the performer who is booked.
       allow read: if isSignedIn() && (isOwner(resource.data.userId) || isOwner(resource.data.performerId));
-      
-      // CREATE: Only a signed-in user can create a booking.
-      // The `userId` in the booking data must also match their own UID.
       allow create: if isSignedIn() && isOwner(request.resource.data.userId);
-      
-      // UPDATE: A booking can be updated by:
-      // 1. The customer who made it.
-      // 2. The performer who is booked.
       allow update: if isSignedIn() && (isOwner(resource.data.userId) || isOwner(resource.data.performerId));
-      
-      // DELETE: Not allowed from the client for safety. Cancel by updating status.
       allow delete: if false;
     }
 
@@ -96,13 +67,8 @@ service cloud.firestore {
     //              Feedback
     // ==========================================
     match /feedback/{feedbackId} {
-      // READ: Only admins can read feedback for privacy.
       allow read: if isSignedIn() && isAdmin();
-      
-      // CREATE: Any signed-in user can submit feedback.
       allow create: if isSignedIn();
-      
-      // UPDATE/DELETE: Not allowed from the client.
       allow update, delete: if false;
     }
     
@@ -110,16 +76,9 @@ service cloud.firestore {
     //              Suggestions
     // ==========================================
     match /suggestions/{suggestionId} {
-        // READ: Anyone can read suggestions.
         allow read: if true;
-        
-        // CREATE: Any signed-in user can create a suggestion.
         allow create: if isSignedIn();
-        
-        // UPDATE: Only an admin can update a suggestion (e.g., to add a comment).
         allow update: if isSignedIn() && isAdmin();
-        
-        // DELETE: Not allowed from the client.
         allow delete: if false;
     }
   }
