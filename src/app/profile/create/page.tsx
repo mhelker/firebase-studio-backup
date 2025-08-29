@@ -19,16 +19,17 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { useAuth } from "@/contexts/auth-context";
 import { useToast } from "@/hooks/use-toast";
 import { useRouter } from "next/navigation";
-import { db } from "@/lib/firebase";
+import { db, storage } from "@/lib/firebase";
 import { doc, setDoc, serverTimestamp } from "firebase/firestore";
-import { useState } from "react";
-import { Loader2, UserPlus, UserX, AlertTriangle, Banknote, Sparkles, Image as ImageIcon } from "lucide-react";
+import { useState, useRef } from "react";
+import { Loader2, UserPlus, UserX, AlertTriangle, Banknote, Sparkles, Image as ImageIcon, Upload } from "lucide-react";
 import Link from "next/link";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { generatePerformerDescriptions } from "@/ai/flows/generate-performer-descriptions";
 import { generatePerformerImage } from "@/ai/flows/generate-performer-image";
 import { uploadDataUrlToStorage } from "@/services/storage-service";
 import Image from "next/image";
+import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 
 const profileFormSchema = z.object({
   name: z.string().min(2, { message: "Name must be at least 2 characters." }),
@@ -56,6 +57,10 @@ export default function CreatePerformerProfilePage() {
   const [isGeneratingCopy, setIsGeneratingCopy] = useState(false);
   const [isGeneratingImage, setIsGeneratingImage] = useState(false);
   const [generatedImagePreview, setGeneratedImagePreview] = useState<string | null>(null);
+
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [imagePreviewUrl, setImagePreviewUrl] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const form = useForm<ProfileFormValues>({
     resolver: zodResolver(profileFormSchema),
@@ -130,9 +135,8 @@ export default function CreatePerformerProfilePage() {
         const dataUri = await generatePerformerImage({
             talentTypes: talentTypes.split(',').map(s => s.trim()).filter(Boolean),
         });
-        setGeneratedImagePreview(dataUri); // Show preview
+        setGeneratedImagePreview(dataUri);
         
-        // Upload and get URL in one step
         toast({ title: "Image Generated!", description: "Now uploading to secure storage..." });
         const storagePath = `performer-images/${user.uid}/${Date.now()}.png`;
         const downloadURL = await uploadDataUrlToStorage(dataUri, storagePath);
@@ -152,6 +156,17 @@ export default function CreatePerformerProfilePage() {
     }
   };
 
+  const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
+    // --- THIS IS THE FIX: The extra dot has been removed ---
+    const file = event.target.files?.[0];
+    if (file) {
+      setSelectedFile(file);
+      setGeneratedImagePreview(null);
+      setImagePreviewUrl(URL.createObjectURL(file));
+      form.setValue("imageUrl", "", { shouldValidate: true });
+    }
+  };
+
   async function onSubmit(data: ProfileFormValues) {
     if (!user) {
       toast({
@@ -161,8 +176,23 @@ export default function CreatePerformerProfilePage() {
       });
       return;
     }
+    if (!selectedFile && !data.imageUrl) {
+        toast({ title: "Image Required", description: "Please upload or generate a profile picture.", variant: "destructive"});
+        return;
+    }
+
     setIsSubmitting(true);
     try {
+      let finalImageUrl = data.imageUrl || "";
+
+      if (selectedFile) {
+        toast({ title: "Uploading Image..." });
+        const storagePath = `performer-images/${user.uid}/profile-picture-${Date.now()}`;
+        const storageRef = ref(storage, storagePath);
+        await uploadBytes(storageRef, selectedFile);
+        finalImageUrl = await getDownloadURL(storageRef);
+      }
+
       const performerData = {
         name: data.name,
         talentTypes: data.talentTypes.split(',').map(s => s.trim()).filter(Boolean),
@@ -171,7 +201,7 @@ export default function CreatePerformerProfilePage() {
         pricePerHour: data.pricePerHour,
         availability: data.availability.split(',').map(s => s.trim()).filter(Boolean),
         locationsServed: data.locationsServed?.split(',').map(s => s.trim()).filter(Boolean) || [],
-        imageUrl: data.imageUrl || "",
+        imageUrl: finalImageUrl,
         dataAiHint: data.talentTypes.toLowerCase(),
         rating: 0,
         reviewCount: 0,
@@ -182,9 +212,9 @@ export default function CreatePerformerProfilePage() {
         bankAccountNumber: data.bankAccountNumber || "",
         routingNumber: data.routingNumber || "",
         createdAt: serverTimestamp(),
+        isActive: true,
       };
       
-      // Use the user's UID as the document ID
       await setDoc(doc(db, "performers", user.uid), performerData);
 
       toast({
@@ -377,41 +407,47 @@ export default function CreatePerformerProfilePage() {
                   </FormItem>
                 )}
               />
-              <FormField
-                control={form.control}
-                name="imageUrl"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Profile Image URL</FormLabel>
-                    <div className="flex items-start gap-4">
-                        <FormControl className="flex-grow">
-                            <Input placeholder="https://your-image-host.com/your-photo.jpg" {...field} />
-                        </FormControl>
-                         <Button
-                          type="button"
-                          variant="outline"
-                          onClick={handleGenerateImage}
-                          disabled={isGeneratingImage || isSubmitting}
-                          className="flex-shrink-0"
-                        >
-                          {isGeneratingImage ? (
-                            <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Generating...</>
-                          ) : (
-                            <><ImageIcon className="mr-2 h-4 w-4" /> Generate with AI</>
-                          )}
-                        </Button>
-                    </div>
-                    <FormDescription>Provide a link to your photo or generate one with AI using your talent types.</FormDescription>
-                    <FormMessage />
-                     {generatedImagePreview && (
-                        <div className="mt-4">
-                            <p className="text-sm font-medium mb-2">AI Generated Image Preview:</p>
-                            <Image src={generatedImagePreview} alt="AI generated preview" width={200} height={200} className="rounded-lg border shadow-md" />
-                        </div>
-                    )}
-                  </FormItem>
-                )}
-              />
+              <FormItem>
+                <FormLabel>Profile Image</FormLabel>
+                <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
+                  <Avatar className="h-24 w-24 border text-muted-foreground">
+                    <AvatarImage src={imagePreviewUrl || generatedImagePreview || ''} alt="Profile preview" />
+                    <AvatarFallback><ImageIcon className="h-10 w-10" /></AvatarFallback>
+                  </Avatar>
+                  <div className="space-y-2">
+                    <input
+                      type="file"
+                      accept="image/png, image/jpeg"
+                      ref={fileInputRef}
+                      onChange={handleFileSelect}
+                      className="hidden"
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => fileInputRef.current?.click()}
+                      disabled={isSubmitting || isGeneratingImage}
+                    >
+                      <Upload className="mr-2 h-4 w-4" />
+                      Upload a Photo
+                    </Button>
+                    <p className="text-xs text-muted-foreground">or</p>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={handleGenerateImage}
+                      disabled={isGeneratingImage || isSubmitting}
+                    >
+                      {isGeneratingImage ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Sparkles className="mr-2 h-4 w-4" />}
+                      Generate with AI
+                    </Button>
+                  </div>
+                </div>
+                <FormDescription>
+                  Upload a high-quality photo or generate one with AI using your talent types.
+                </FormDescription>
+                <FormMessage />
+              </FormItem>
                <FormField
                 control={form.control}
                 name="youtubeVideoId"
