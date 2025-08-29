@@ -240,7 +240,16 @@ export default function EditPerformerProfilePage() {
       batch.set(customerDocRef, { imageUrl: data.imageUrl || "" }, { merge: true });
 
       await batch.commit();
-
+// ADD THIS BLOCK OF CODE
+console.log("Profile updated, now revalidating cache...");
+await fetch('/api/revalidate', {
+  method: 'POST',
+  headers: {
+    'Authorization': `Bearer ${process.env.NEXT_PUBLIC_REVALIDATE_TOKEN}`
+  }
+});
+console.log("Cache revalidation triggered.");
+// END OF BLOCK TO ADD
       toast({
         title: "Profile Updated!",
         description: "Your performer profile has been successfully updated.",
