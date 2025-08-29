@@ -27,8 +27,7 @@ import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 
 
 export default function ProfilePage() {
-  // --- CHANGE 1: Renamed `imageUrl` from context for clarity ---
-  const { user, loading: authLoading, logOut, sendPasswordReset, imageUrl: customerImageUrl } = useAuth();
+  const { user, loading: authLoading, logOut, sendPasswordReset, imageUrl } = useAuth();
   const { toast } = useToast();
   const router = useRouter();
   const [performerProfile, setPerformerProfile] = useState<Performer | null>(null);
@@ -36,13 +35,9 @@ export default function ProfilePage() {
   const [isFetchingProfile, setIsFetchingProfile] = useState(true);
   const [isSendingReset, setIsSendingReset] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
-
-  // --- CHANGE 2: Created two separate refs for the two different file inputs ---
-  const customerFileInputRef = useRef<HTMLInputElement>(null);
-  const performerFileInputRef = useRef<HTMLInputElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    // This entire useEffect block is your original, correct code. No changes needed here.
     const fetchProfiles = async () => {
       if (!user) {
         setIsFetchingProfile(false);
@@ -91,19 +86,60 @@ export default function ProfilePage() {
     }
   }, [user, authLoading, toast]);
 
-  // Your original handleDeleteRequest and handlePasswordReset functions are perfect.
-  const handleDeleteRequest = async () => { /* ... (no changes) ... */ };
-  const handlePasswordReset = async () => { /* ... (no changes) ... */ };
+  const handleDeleteRequest = async () => {
+    if (!user) return;
+    try {
+        const batch = writeBatch(db);
+        
+        const customerDocRef = doc(db, "customers", user.uid);
+        batch.update(customerDocRef, { isActive: false });
+        
+        if (performerProfile) {
+            const performerDocRef = doc(db, "performers", user.uid);
+            batch.update(performerDocRef, { isActive: false });
+        }
+        
+        await batch.commit();
+
+        toast({
+            title: "Account Deactivated",
+            description: "Your account has been marked for deletion and you have been logged out.",
+            duration: 8000,
+        });
+
+        logOut();
+    } catch (error: any) {
+        console.error("Error deactivating account:", error);
+        toast({
+            title: "Error",
+            description: "Could not deactivate your account. Please contact support.",
+            variant: "destructive",
+        });
+    }
+  }
+
+  const handlePasswordReset = async () => {
+    if (!user || !user.email) return;
+    setIsSendingReset(true);
+    const success = await sendPasswordReset(user.email);
+    if (success) {
+        toast({
+            title: "Password Reset Email Sent",
+            description: `A link to reset your password has been sent to ${user.email}.`,
+            duration: 8000
+        });
+    }
+    setIsSendingReset(false);
+  }
   
-  // --- CHANGE 3: Renamed the original functions to be specific to the CUSTOMER picture ---
-  const handleCustomerFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (file && user) {
-      handleCustomerImageUpload(file, user.uid);
+      handleImageUpload(file, user.uid);
     }
   };
 
-  const handleCustomerImageUpload = async (file: File, userId: string) => {
+  const handleImageUpload = async (file: File, userId: string) => {
     setIsUploading(true);
     try {
       const storagePath = `customer-images/${userId}/profile-picture-${Date.now()}`;
@@ -112,17 +148,27 @@ export default function ProfilePage() {
       await uploadBytes(storageRef, file);
       const downloadURL = await getDownloadURL(storageRef);
       
-      // This function now ONLY updates the customer document.
+      const batch = writeBatch(db);
+      
       const customerDocRef = doc(db, "customers", userId);
-      await setDoc(customerDocRef, { imageUrl: downloadURL }, { merge: true });
+      batch.set(customerDocRef, { imageUrl: downloadURL }, { merge: true });
+
+      // --- THIS IS THE FINAL FIX ---
+      // Only try to update the performer document IF a performer profile exists.
+      if (performerProfile) {
+        const performerDocRef = doc(db, "performers", userId);
+        batch.update(performerDocRef, { imageUrl: downloadURL });
+      }
+
+      await batch.commit();
 
       toast({
         title: "Success!",
-        description: "Your new account picture has been uploaded.",
+        description: "Your new profile picture has been uploaded and synced.",
       });
 
     } catch (error: any) {
-      console.error("Error uploading customer image:", error);
+      console.error("Error uploading image:", error);
       toast({
         title: "Upload Failed",
         description: error.message || "An unknown error occurred during upload.",
@@ -133,52 +179,73 @@ export default function ProfilePage() {
     }
   };
 
-  // --- CHANGE 4: Added NEW, separate functions for the PERFORMER picture ---
-  const handlePerformerFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (file && user) {
-      handlePerformerImageUpload(file, user.uid);
-    }
-  };
 
-  const handlePerformerImageUpload = async (file: File, userId: string) => {
-    setIsUploading(true);
-    try {
-      const storagePath = `performer-images/${userId}/profile-picture-${Date.now()}`;
-      const storageRef = ref(storage, storagePath);
-      
-      await uploadBytes(storageRef, file);
-      const downloadURL = await getDownloadURL(storageRef);
-      
-      // This function ONLY updates the performer document.
-      const performerDocRef = doc(db, "performers", userId);
-      await updateDoc(performerDocRef, { imageUrl: downloadURL });
+  if (authLoading || (user && isFetchingProfile)) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[calc(100vh-200px)]">
+        <Loader2 className="h-12 w-12 animate-spin text-primary" />
+        <p className="mt-3 text-muted-foreground">Loading profile...</p>
+      </div>
+    );
+  }
 
-      setPerformerProfile(prev => prev ? { ...prev, imageUrl: downloadURL } : null);
+  if (!user) {
+    return (
+      <div className="container mx-auto py-8 text-center">
+        <Card className="max-w-md mx-auto shadow-lg">
+          <CardHeader>
+            <CardTitle className="flex items-center justify-center"><UserX className="w-8 h-8 mr-2 text-primary" /> Login Required</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-muted-foreground mb-6">You need to be logged in to view your profile.</p>
+            <Button asChild>
+              <Link href="/login">Go to Login</Link>
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+  
+  if (!customerProfile) {
+     return (
+        <div className="container mx-auto py-8 text-center">
+            <Card className="max-w-md mx-auto shadow-lg border-destructive">
+                <CardHeader>
+                    <CardTitle className="text-destructive flex items-center justify-center">
+                        <AlertTriangle className="w-8 h-8 mr-2" /> Profile Error
+                    </CardTitle>
+                </CardHeader>
+                <CardContent>
+                    <p className="text-muted-foreground mb-6">
+                        Could not load your profile data. The Firestore document may be missing or there was an error.
+                    </p>
+                    <Button onClick={logOut} variant="destructive">Logout and Try Again</Button>
+                </CardContent>
+            </Card>
+        </div>
+     );
+  }
 
-      toast({
-        title: "Success!",
-        description: "Your new performer picture has been uploaded.",
-      });
-
-    } catch (error: any) {
-      console.error("Error uploading performer image:", error);
-      toast({
-        title: "Upload Failed",
-        description: error.message || "An unknown error occurred.",
-        variant: "destructive",
-      });
-    } finally {
-      setIsUploading(false);
-    }
-  };
-
-
-  // Your original loading and auth checks are perfect.
-  if (authLoading || (user && isFetchingProfile)) { /* ... (no changes) ... */ }
-  if (!user) { /* ... (no changes) ... */ }
-  if (!customerProfile) { /* ... (no changes) ... */ }
-  if (customerProfile.isActive === false) { /* ... (no changes) ... */ }
+  if (customerProfile.isActive === false) {
+    return (
+        <div className="container mx-auto py-8 text-center">
+            <Card className="max-w-md mx-auto shadow-lg">
+            <CardHeader>
+                <CardTitle className="flex items-center justify-center">
+                <AlertTriangle className="w-8 h-8 mr-2 text-destructive" /> Account Deactivated
+                </CardTitle>
+            </CardHeader>
+            <CardContent>
+                <p className="text-muted-foreground mb-6">
+                This account has been deactivated. Please contact support to reactivate.
+                </p>
+                <Button onClick={logOut}>Logout</Button>
+            </CardContent>
+            </Card>
+        </div>
+    );
+  }
 
   return (
     <div className="container mx-auto py-8 space-y-8">
@@ -197,8 +264,7 @@ export default function ProfilePage() {
              <div className="p-4 border rounded-md bg-secondary/20 space-y-4">
                 <div className="flex items-center gap-4">
                     <Avatar className="h-16 w-16 text-2xl">
-                        {/* This correctly uses the customerImageUrl from the auth context */}
-                        <AvatarImage src={customerImageUrl || ''} alt="Customer avatar" />
+                        <AvatarImage src={imageUrl || ''} alt="Customer avatar" />
                         <AvatarFallback>{customerProfile.displayName?.charAt(0).toUpperCase() || 'C'}</AvatarFallback>
                     </Avatar>
                     <div>
@@ -207,20 +273,24 @@ export default function ProfilePage() {
                     </div>
                 </div>
                  <div>
-                    <h4 className="font-semibold text-primary mb-2">Update Account Picture</h4>
+                    <h4 className="font-semibold text-primary mb-2">Update Profile Picture</h4>
                     <input
                         type="file"
                         accept="image/png, image/jpeg, image/gif"
-                        ref={customerFileInputRef}
-                        onChange={handleCustomerFileSelect}
+                        ref={fileInputRef}
+                        onChange={handleFileSelect}
                         className="hidden"
                     />
                      <Button 
                         variant="outline" 
-                        onClick={() => customerFileInputRef.current?.click()}
+                        onClick={() => fileInputRef.current?.click()}
                         disabled={isUploading || authLoading}
                     >
-                        {isUploading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Upload className="mr-2 h-4 w-4" />}
+                        {isUploading ? (
+                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        ) : (
+                            <Upload className="mr-2 h-4 w-4" />
+                        )}
                        Upload Picture
                     </Button>
                 </div>
@@ -231,7 +301,11 @@ export default function ProfilePage() {
                         onClick={handlePasswordReset} 
                         disabled={isSendingReset}
                     >
-                       {isSendingReset ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <KeyRound className="mr-2 h-4 w-4" />}
+                       {isSendingReset ? (
+                           <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                       ) : (
+                           <KeyRound className="mr-2 h-4 w-4" />
+                       )}
                        Send Password Reset Email
                     </Button>
                 </div>
@@ -257,38 +331,20 @@ export default function ProfilePage() {
           </CardHeader>
           <CardContent className="flex-grow">
             {isFetchingProfile ? (
-                 <div className="flex justify-center items-center h-full min-h-[150px]"><Loader2 className="w-8 h-8 animate-spin text-primary"/></div>
+                 <div className="flex justify-center items-center h-full min-h-[150px]">
+                    <Loader2 className="w-8 h-8 animate-spin text-primary"/>
+                 </div>
             ) : performerProfile ? (
                 <div className="space-y-4">
                     <div className="flex items-center gap-4 p-4 border rounded-md bg-secondary/20">
                         <Avatar className="h-16 w-16 text-2xl">
-                            {/* This now uses the performer's specific image URL */}
-                            <AvatarImage src={performerProfile.imageUrl || ''} alt={performerProfile.name || 'Performer avatar'}/>
+                            <AvatarImage src={imageUrl || ''} alt={performerProfile.name || 'Performer avatar'}/>
                             <AvatarFallback>{performerProfile.name?.charAt(0).toUpperCase() || 'P'}</AvatarFallback>
                         </Avatar>
                         <div>
                             <h3 className="font-bold text-lg">{performerProfile.name}</h3>
                             <p className="text-sm text-muted-foreground">Your performer profile is live.</p>
                         </div>
-                    </div>
-                    {/* --- CHANGE 5: Added the new upload section for performers --- */}
-                    <div>
-                        <h4 className="font-semibold text-primary mb-2">Update Performer Picture</h4>
-                         <input
-                            type="file"
-                            accept="image/png, image/jpeg, image/gif"
-                            ref={performerFileInputRef}
-                            onChange={handlePerformerFileSelect}
-                            className="hidden"
-                        />
-                        <Button 
-                            variant="outline" 
-                            onClick={() => performerFileInputRef.current?.click()}
-                            disabled={isUploading || authLoading}
-                        >
-                            {isUploading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Upload className="mr-2 h-4 w-4" />}
-                            Upload Picture
-                        </Button>
                     </div>
                      <Button asChild className="w-full" href="/dashboard">
                         <Link href="/dashboard">Go to Dashboard</Link>
