@@ -254,17 +254,18 @@ console.log("Cache revalidation triggered.");
         title: "Profile Updated!",
         description: "Your performer profile has been successfully updated.",
       });
-      
-      // --- THIS IS THE FINAL FIX ---
-      // After successfully saving, we call the revalidation API route.
-      console.log("Profile updated, now revalidating cache...");
+
+      // First, we tell Vercel's servers to update their cache.
       await fetch('/api/revalidate', {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${process.env.NEXT_PUBLIC_REVALIDATE_TOKEN}`
         }
       });
-      console.log("Cache revalidation triggered.");
+
+      // --- THIS IS THE FINAL, CRITICAL FIX ---
+      // Now, we tell the user's browser to refresh its own cache.
+      router.refresh();
       // --- END OF FIX ---
 
       router.push('/profile');
