@@ -1,4 +1,3 @@
-
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -181,6 +180,7 @@ export default function EditPerformerProfilePage() {
         
         form.setValue("imageUrl", downloadURL, { shouldValidate: true });
         
+        // Also update the customer profile
         const customerDocRef = doc(db, "customers", user.uid);
         await setDoc(customerDocRef, { imageUrl: downloadURL }, { merge: true });
 
@@ -235,6 +235,7 @@ export default function EditPerformerProfilePage() {
       
       batch.set(performerDocRef, performerData);
 
+      // Also update the unified image URL in the customer profile
       const customerDocRef = doc(db, "customers", user.uid);
       batch.set(customerDocRef, { imageUrl: data.imageUrl || "" }, { merge: true });
 
@@ -247,7 +248,6 @@ export default function EditPerformerProfilePage() {
       
       // --- THIS IS THE FINAL FIX ---
       // After successfully saving, we call the revalidation API route.
-      // Note: We're now using NEXT_PUBLIC_REVALIDATE_TOKEN here.
       console.log("Profile updated, now revalidating cache...");
       await fetch('/api/revalidate', {
         method: 'POST',
