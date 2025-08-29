@@ -27,7 +27,7 @@ import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 
 
 export default function ProfilePage() {
-  const { user, loading: authLoading, logOut, sendPasswordReset, imageUrl } = useAuth();
+  const { user, loading: authLoading, logOut, sendPasswordReset, imageUrl: customerImageUrl } = useAuth();
   const { toast } = useToast();
   const router = useRouter();
   const [performerProfile, setPerformerProfile] = useState<Performer | null>(null);
@@ -35,7 +35,10 @@ export default function ProfilePage() {
   const [isFetchingProfile, setIsFetchingProfile] = useState(true);
   const [isSendingReset, setIsSendingReset] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  
+  // Create two separate refs for the two different file inputs
+  const customerFileInputRef = useRef<HTMLInputElement>(null);
+  const performerFileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     const fetchProfiles = async () => {
@@ -132,14 +135,15 @@ export default function ProfilePage() {
     setIsSendingReset(false);
   }
   
-  const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
+  // Renamed original functions to be specific to CUSTOMER
+  const handleCustomerFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (file && user) {
-      handleImageUpload(file, user.uid);
+      handleCustomerImageUpload(file, user.uid);
     }
   };
 
-  const handleImageUpload = async (file: File, userId: string) => {
+  const handleCustomerImageUpload = async (file: File, userId: string) => {
     setIsUploading(true);
     try {
       const storagePath = `customer-images/${userId}/profile-picture-${Date.now()}`;
@@ -148,27 +152,16 @@ export default function ProfilePage() {
       await uploadBytes(storageRef, file);
       const downloadURL = await getDownloadURL(storageRef);
       
-      const batch = writeBatch(db);
-      
       const customerDocRef = doc(db, "customers", userId);
-      batch.set(customerDocRef, { imageUrl: downloadURL }, { merge: true });
-
-      // --- THIS IS THE FINAL FIX ---
-      // Only try to update the performer document IF a performer profile exists.
-      if (performerProfile) {
-        const performerDocRef = doc(db, "performers", userId);
-        batch.update(performerDocRef, { imageUrl: downloadURL });
-      }
-
-      await batch.commit();
+      await setDoc(customerDocRef, { imageUrl: downloadURL }, { merge: true });
 
       toast({
         title: "Success!",
-        description: "Your new profile picture has been uploaded and synced.",
+        description: "Your new account picture has been uploaded.",
       });
 
     } catch (error: any) {
-      console.error("Error uploading image:", error);
+      console.error("Error uploading customer image:", error);
       toast({
         title: "Upload Failed",
         description: error.message || "An unknown error occurred during upload.",
@@ -179,6 +172,44 @@ export default function ProfilePage() {
     }
   };
 
+  // Added NEW, separate functions for the PERFORMER
+  const handlePerformerFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file && user) {
+      handlePerformerImageUpload(file, user.uid);
+    }
+  };
+
+  const handlePerformerImageUpload = async (file: File, userId: string) => {
+    setIsUploading(true);
+    try {
+      const storagePath = `performer-images/${userId}/profile-picture-${Date.now()}`;
+      const storageRef = ref(storage, storagePath);
+      
+      await uploadBytes(storageRef, file);
+      const downloadURL = await getDownloadURL(storageRef);
+      
+      const performerDocRef = doc(db, "performers", userId);
+      await updateDoc(performerDocRef, { imageUrl: downloadURL });
+
+      setPerformerProfile(prev => prev ? { ...prev, imageUrl: downloadURL } : null);
+
+      toast({
+        title: "Success!",
+        description: "Your new performer picture has been uploaded.",
+      });
+
+    } catch (error: any) {
+      console.error("Error uploading performer image:", error);
+      toast({
+        title: "Upload Failed",
+        description: error.message || "An unknown error occurred during upload.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsUploading(false);
+    }
+  };
 
   if (authLoading || (user && isFetchingProfile)) {
     return (
@@ -264,7 +295,7 @@ export default function ProfilePage() {
              <div className="p-4 border rounded-md bg-secondary/20 space-y-4">
                 <div className="flex items-center gap-4">
                     <Avatar className="h-16 w-16 text-2xl">
-                        <AvatarImage src={imageUrl || ''} alt="Customer avatar" />
+                        <AvatarImage src={customerImageUrl || ''} alt="Customer avatar" />
                         <AvatarFallback>{customerProfile.displayName?.charAt(0).toUpperCase() || 'C'}</AvatarFallback>
                     </Avatar>
                     <div>
@@ -273,17 +304,17 @@ export default function ProfilePage() {
                     </div>
                 </div>
                  <div>
-                    <h4 className="font-semibold text-primary mb-2">Update Profile Picture</h4>
+                    <h4 className="font-semibold text-primary mb-2">Update Account Picture</h4>
                     <input
                         type="file"
                         accept="image/png, image/jpeg, image/gif"
-                        ref={fileInputRef}
-                        onChange={handleFileSelect}
+                        ref={customerFileInputRef}
+                        onChange={handleCustomerFileSelect}
                         className="hidden"
                     />
                      <Button 
                         variant="outline" 
-                        onClick={() => fileInputRef.current?.click()}
+                        onClick={() => customerFileInputRef.current?.click()}
                         disabled={isUploading || authLoading}
                     >
                         {isUploading ? (
@@ -338,13 +369,31 @@ export default function ProfilePage() {
                 <div className="space-y-4">
                     <div className="flex items-center gap-4 p-4 border rounded-md bg-secondary/20">
                         <Avatar className="h-16 w-16 text-2xl">
-                            <AvatarImage src={imageUrl || ''} alt={performerProfile.name || 'Performer avatar'}/>
+                            <AvatarImage src={performerProfile.imageUrl || ''} alt={performerProfile.name || 'Performer avatar'}/>
                             <AvatarFallback>{performerProfile.name?.charAt(0).toUpperCase() || 'P'}</AvatarFallback>
                         </Avatar>
                         <div>
                             <h3 className="font-bold text-lg">{performerProfile.name}</h3>
                             <p className="text-sm text-muted-foreground">Your performer profile is live.</p>
                         </div>
+                    </div>
+                    <div>
+                        <h4 className="font-semibold text-primary mb-2">Update Performer Picture</h4>
+                         <input
+                            type="file"
+                            accept="image/png, image/jpeg, image/gif"
+                            ref={performerFileInputRef}
+                            onChange={handlePerformerFileSelect}
+                            className="hidden"
+                        />
+                        <Button 
+                            variant="outline" 
+                            onClick={() => performerFileInputRef.current?.click()}
+                            disabled={isUploading || authLoading}
+                        >
+                            {isUploading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Upload className="mr-2 h-4 w-4" />}
+                            Upload Picture
+                        </Button>
                     </div>
                      <Button asChild className="w-full" href="/dashboard">
                         <Link href="/dashboard">Go to Dashboard</Link>
