@@ -1,4 +1,3 @@
-
 "use client";
 
 import Image from 'next/image';
@@ -20,14 +19,14 @@ export function PerformerCard({ performer, isAiRecommendation = false }: Perform
   const { name, talentTypes, description } = performer;
   const price = 'pricePerHour' in performer ? performer.pricePerHour : performer.price;
   const rating = 'rating' in performer && performer.rating !== undefined ? performer.rating : 0;
-  const imageUrl = performer.imageUrl || `https://placehold.co/300x200.png?text=${encodeURIComponent(name || 'Performer')}`;
+  // This line is simplified, the fallback is handled in the Image component itself
+  const imageUrl = performer.imageUrl;
   const displayTalentTypes = talentTypes?.join(', ') || 'Versatile Talent';
   const dataAiHint = performer.dataAiHint || (talentTypes && talentTypes.length > 0 ? talentTypes.map(t => t.toLowerCase()).join(' ') : 'performer');
   
-  // If the performer object has an ID (which it should for both real and AI-recommended real performers), link to their page.
   const linkHref = 'id' in performer && performer.id ? `/performers/${performer.id}` : '#';
 
-  const availability = 'availability' in performer ? performer.availability : 'N/A'; // For AiRecommendedPerformer
+  const availability = 'availability' in performer ? performer.availability : 'N/A';
   const recommendationReason = 'recommendationReason' in performer ? performer.recommendationReason : null;
 
   const cardContent = (
@@ -57,8 +56,10 @@ export function PerformerCard({ performer, isAiRecommendation = false }: Perform
   return (
     <Card className="flex flex-col overflow-hidden shadow-lg hover:shadow-xl transition-shadow duration-300 h-full">
       <CardHeader className="p-0 relative">
+        {/* --- THIS IS THE FIX --- */}
+        {/* The `src` now correctly uses the performer's imageUrl with a fallback */}
         <Image
-        src={imageUrl}
+        src={imageUrl || `https://placehold.co/400x250.png?text=${encodeURIComponent(name || 'Performer')}`}
         alt={name || 'Performer photo'}
         width={400}
         height={250}

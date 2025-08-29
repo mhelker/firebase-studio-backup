@@ -50,7 +50,7 @@ export function PerformerDetailClient({ performer, reviews }: PerformerDetailCli
 
   return (
     <div className="max-w-4xl mx-auto space-y-8">
-      {/* --- THIS IS THE MISSING SECTION, NOW RESTORED --- */}
+      {/* --- THIS IS THE FIX: The missing Card section has been restored --- */}
       <Card className="overflow-hidden shadow-xl">
         <div className="relative h-64 md:h-96 w-full">
           <Image
@@ -170,9 +170,7 @@ export function PerformerDetailClient({ performer, reviews }: PerformerDetailCli
           </div>
         </CardContent>
       </Card>
-      {/* --- END OF RESTORED SECTION --- */}
-
-      {/* Booking Form Card */}
+      
       <Card className="shadow-lg">
         <CardHeader>
           <CardTitle className="text-2xl font-headline flex items-center">
@@ -191,7 +189,6 @@ export function PerformerDetailClient({ performer, reviews }: PerformerDetailCli
         </CardContent>
       </Card>
 
-      {/* Reviews Card */}
       <Card className="shadow-lg">
         <CardHeader>
           <CardTitle className="text-2xl font-headline flex items-center">
