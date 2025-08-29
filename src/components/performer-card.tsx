@@ -78,7 +78,7 @@ export function PerformerCard({ performer, isAiRecommendation = false }: Perform
       </CardContent>
       <CardFooter className="p-4 border-t">
           <Button asChild className="w-full bg-primary hover:bg-primary/90 text-primary-foreground" disabled={linkHref === '#'}>
-            <Link href={linkHref}>View Profile</Link>
+            <a href={linkHref}>View Profile</a>
           </Button>
       </CardFooter>
     </Card>
