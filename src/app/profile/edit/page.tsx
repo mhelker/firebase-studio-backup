@@ -43,8 +43,6 @@ const profileFormSchema = z.object({
   contactEmail: z.string().email({ message: "Please enter a valid email address." }),
   specialties: z.string().optional(),
   youtubeVideoId: z.string().optional(),
-  bankAccountNumber: z.string().optional(),
-  routingNumber: z.string().optional(),
 });
 
 type ProfileFormValues = z.infer<typeof profileFormSchema>;
@@ -59,6 +57,7 @@ export default function EditPerformerProfilePage() {
   const [isGeneratingCopy, setIsGeneratingCopy] = useState(false);
   const [isGeneratingImage, setIsGeneratingImage] = useState(false);
   const [generatedImagePreview, setGeneratedImagePreview] = useState<string | null>(null);
+  const [isRedirecting, setIsRedirecting] = useState(false);
 
   const form = useForm<ProfileFormValues>({
     resolver: zodResolver(profileFormSchema),
@@ -74,8 +73,6 @@ export default function EditPerformerProfilePage() {
       contactEmail: user?.email || "",
       specialties: "",
       youtubeVideoId: "",
-      bankAccountNumber: "",
-      routingNumber: "",
     },
   });
 
@@ -85,7 +82,6 @@ export default function EditPerformerProfilePage() {
         setIsLoadingProfile(true);
         const docRef = doc(db, "performers", user.uid);
         const docSnap = await getDoc(docRef);
-
         if (docSnap.exists()) {
           setProfileExists(true);
           const data = docSnap.data() as Performer;
@@ -101,8 +97,6 @@ export default function EditPerformerProfilePage() {
             imageUrl: data.imageUrl || "",
             specialties: (data.specialties || []).join(", "),
             youtubeVideoId: data.youtubeVideoId || "",
-            bankAccountNumber: data.bankAccountNumber || "",
-            routingNumber: data.routingNumber || "",
           });
         } else {
           setProfileExists(false);
@@ -110,7 +104,6 @@ export default function EditPerformerProfilePage() {
         setIsLoadingProfile(false);
       }
     };
-
     if (!authLoading && user) {
       fetchProfileData();
     } else if (!authLoading && !user) {
@@ -120,7 +113,6 @@ export default function EditPerformerProfilePage() {
 
   const handleGenerateCopy = async () => {
     const { name, talentTypes } = form.getValues();
-
     if (!name || !talentTypes) {
       toast({
         title: "Missing Information",
@@ -129,7 +121,6 @@ export default function EditPerformerProfilePage() {
       });
       return;
     }
-
     setIsGeneratingCopy(true);
     try {
       const result = await generatePerformerDescriptions({
@@ -165,14 +156,13 @@ export default function EditPerformerProfilePage() {
         });
         return;
     }
-
     setIsGeneratingImage(true);
     setGeneratedImagePreview(null);
     try {
         const dataUri = await generatePerformerImage({
             talentTypes: talentTypes.split(',').map(s => s.trim()).filter(Boolean),
         });
-        setGeneratedImagePreview(dataUri); // Show preview
+        setGeneratedImagePreview(dataUri);
         
         toast({ title: "Image Generated!", description: "Now uploading to secure storage..." });
         const storagePath = `customer-images/${user.uid}/${Date.now()}.png`;
@@ -180,12 +170,9 @@ export default function EditPerformerProfilePage() {
         
         form.setValue("imageUrl", downloadURL, { shouldValidate: true });
         
-        // Also update the customer profile
         const customerDocRef = doc(db, "customers", user.uid);
         await setDoc(customerDocRef, { imageUrl: downloadURL }, { merge: true });
-
         toast({ title: "Image Ready!", description: "Your new AI-generated profile image URL has been saved and synced." });
-
     } catch (error) {
         console.error("Error generating or uploading image:", error);
         toast({
@@ -195,6 +182,30 @@ export default function EditPerformerProfilePage() {
         });
     } finally {
         setIsGeneratingImage(false);
+    }
+  };
+
+  const handleStripeOnboarding = async () => {
+    if (!user) return;
+    setIsRedirecting(true);
+    try {
+        const token = await user.getIdToken();
+        const response = await fetch('/api/stripe-connect', {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${token}`,
+            },
+        });
+        const data = await response.json();
+        if (data.url) {
+            window.location.href = data.url;
+        } else {
+            throw new Error(data.error || "Failed to create Stripe onboarding link.");
+        }
+    } catch (error: any) {
+        console.error("Error during Stripe onboarding:", error);
+        toast({ title: "Error", description: error.message, variant: "destructive" });
+        setIsRedirecting(false);
     }
   };
 
@@ -229,11 +240,9 @@ export default function EditPerformerProfilePage() {
         contactEmail: data.contactEmail,
         specialties: data.specialties?.split(',').map(s => s.trim()).filter(Boolean) || [],
         youtubeVideoId: data.youtubeVideoId || "",
-        bankAccountNumber: data.bankAccountNumber || "",
-        routingNumber: data.routingNumber || "",
       };
       
-      batch.set(performerDocRef, performerData);
+      batch.set(performerDocRef, performerData, { merge: true });
 
       const customerDocRef = doc(db, "customers", user.uid);
       batch.set(customerDocRef, { imageUrl: data.imageUrl || "" }, { merge: true });
@@ -245,7 +254,6 @@ export default function EditPerformerProfilePage() {
         description: "Your performer profile has been successfully updated.",
       });
       
-      // Tell the Vercel server to get fresh data in the background
       fetch('/api/revalidate', {
         method: 'POST',
         headers: {
@@ -253,8 +261,6 @@ export default function EditPerformerProfilePage() {
         }
       });
 
-      // --- THIS IS THE FINAL, GUARANTEED FIX ---
-      // Force a hard navigation to the profile page to clear the browser cache.
       window.location.href = '/profile';
 
     } catch (error) {
