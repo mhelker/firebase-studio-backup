@@ -1,21 +1,22 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { Stripe } from 'stripe';
 import { doc, getDoc, updateDoc } from 'firebase/firestore';
+// --- CHANGE 1: We import `db` and `adminApp` correctly ---
 import { db } from '@/lib/firebase';
-import { getFirebaseAdminApp } from '@/lib/firebase-admin-lazy';
-import { auth as adminAuth } from 'firebase-admin';
+import { adminApp } from '@/lib/firebase-admin-lazy'; 
+import { getAuth } from 'firebase-admin/auth';
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
   apiVersion: '2024-06-20',
 });
 
+// --- CHANGE 2: The entire function is simplified to use the imported `adminApp` ---
 async function getUserIdFromRequest(req: NextRequest): Promise<string | null> {
     const authorization = req.headers.get("Authorization");
     if (authorization?.startsWith("Bearer ")) {
         const idToken = authorization.split("Bearer ")[1];
         try {
-            const adminApp = getFirebaseAdminApp();
-            const decodedToken = await adminAuth(adminApp).verifyIdToken(idToken);
+            const decodedToken = await getAuth(adminApp).verifyIdToken(idToken);
             return decodedToken.uid;
         } catch (error) {
             console.error("Error verifying auth token:", error);
