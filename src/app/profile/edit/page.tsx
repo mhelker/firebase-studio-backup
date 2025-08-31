@@ -186,7 +186,10 @@ export default function EditPerformerProfilePage() {
   };
 
   const handleStripeOnboarding = async () => {
-    if (!user) return;
+    if (!user) {
+        toast({ title: "Error", description: "You must be logged in to set up payouts.", variant: "destructive" });
+        return;
+    }
     setIsRedirecting(true);
     try {
         const token = await user.getIdToken();
