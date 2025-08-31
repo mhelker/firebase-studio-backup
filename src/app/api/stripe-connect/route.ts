@@ -1,16 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { Stripe } from 'stripe';
 import { doc, getDoc, updateDoc } from 'firebase/firestore';
-// --- CHANGE 1: We import `db` and `adminApp` correctly ---
-import { db } from '@/lib/firebase';
-import { adminApp } from '@/lib/firebase-admin-lazy'; 
+// --- THIS IS THE FIX (Part 1) ---
+// We import the ADMIN database instance and name it `adminDb` for clarity.
+import { adminApp, db as adminDb } from '@/lib/firebase-admin-lazy'; 
 import { getAuth } from 'firebase-admin/auth';
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
   apiVersion: '2024-06-20',
 });
 
-// --- CHANGE 2: The entire function is simplified to use the imported `adminApp` ---
 async function getUserIdFromRequest(req: NextRequest): Promise<string | null> {
     const authorization = req.headers.get("Authorization");
     if (authorization?.startsWith("Bearer ")) {
@@ -33,7 +32,9 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const performerDocRef = doc(db, 'performers', userId);
+    // --- THIS IS THE FIX (Part 2) ---
+    // We now use the `adminDb` for all server-side database operations.
+    const performerDocRef = doc(adminDb, 'performers', userId);
     const performerSnap = await getDoc(performerDocRef);
 
     if (!performerSnap.exists()) {
@@ -53,6 +54,7 @@ export async function POST(req: NextRequest) {
         },
       });
       stripeAccountId = account.id;
+      // This update also uses `adminDb`
       await updateDoc(performerDocRef, { stripeAccountId });
     }
 
