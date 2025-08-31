@@ -235,7 +235,6 @@ export default function EditPerformerProfilePage() {
       
       batch.set(performerDocRef, performerData);
 
-      // Also update the unified image URL in the customer profile
       const customerDocRef = doc(db, "customers", user.uid);
       batch.set(customerDocRef, { imageUrl: data.imageUrl || "" }, { merge: true });
 
@@ -246,19 +245,18 @@ export default function EditPerformerProfilePage() {
         description: "Your performer profile has been successfully updated.",
       });
       
-      // --- THIS IS THE FINAL FIX ---
-      // After successfully saving, we call the revalidation API route.
-      console.log("Profile updated, now revalidating cache...");
-      await fetch('/api/revalidate', {
+      // Tell the Vercel server to get fresh data in the background
+      fetch('/api/revalidate', {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${process.env.NEXT_PUBLIC_REVALIDATE_TOKEN}`
         }
       });
-      console.log("Cache revalidation triggered.");
-      // --- END OF FIX ---
 
-      router.push('/profile');
+      // --- THIS IS THE FINAL, GUARANTEED FIX ---
+      // Force a hard navigation to the profile page to clear the browser cache.
+      window.location.href = '/profile';
+
     } catch (error) {
       console.error("Error updating performer profile:", error);
       toast({
