@@ -522,42 +522,21 @@ export default function EditPerformerProfilePage() {
            <Card className="shadow-xl">
               <CardHeader>
                 <CardTitle className="text-2xl font-headline flex items-center"><Banknote className="w-7 h-7 mr-3 text-primary" /> Payout Information</CardTitle>
-                <CardDescription>This is where your earnings will be sent. This information is not public.</CardDescription>
+                <CardDescription>
+                    To receive payments for your performances, you must set up a secure account with our payment processor, Stripe.
+                </CardDescription>
               </CardHeader>
-              <CardContent className="space-y-6">
-                <Alert variant="destructive">
-                  <AlertTriangle className="h-4 w-4" />
-                  <AlertTitle>Prototype Environment</AlertTitle>
-                  <AlertDescription>
-                    Do not enter real bank account information. This form is for demonstration purposes only.
-                  </AlertDescription>
-                </Alert>
-                <FormField
-                  control={form.control}
-                  name="routingNumber"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Routing Number</FormLabel>
-                      <FormControl>
-                        <Input placeholder="e.g., 123456789" {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="bankAccountNumber"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Bank Account Number</FormLabel>
-                      <FormControl>
-                        <Input placeholder="e.g., 000123456789" {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
+              <CardContent>
+                <Button 
+                    type="button" 
+                    onClick={handleStripeOnboarding}
+                    disabled={isRedirecting}
+                    className="w-full"
+                >
+                    {isRedirecting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                    Set Up & Manage Payouts with Stripe
+                </Button>
+                <p className="text-xs text-muted-foreground mt-2">You will be redirected to Stripe's secure website to enter your details.</p>
               </CardContent>
           </Card>
 

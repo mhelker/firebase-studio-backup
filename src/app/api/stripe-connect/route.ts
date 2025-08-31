@@ -42,7 +42,6 @@ export async function POST(req: NextRequest) {
     const performerData = performerSnap.data();
     let stripeAccountId = performerData.stripeAccountId;
 
-    // Create a new Stripe Connect account if one doesn't exist
     if (!stripeAccountId) {
       const account = await stripe.accounts.create({
         type: 'express',
@@ -56,7 +55,6 @@ export async function POST(req: NextRequest) {
       await updateDoc(performerDocRef, { stripeAccountId });
     }
 
-    // Create a new account link
     const accountLink = await stripe.accountLinks.create({
       account: stripeAccountId,
       refresh_url: `${req.nextUrl.origin}/profile/edit`,
