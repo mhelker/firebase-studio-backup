@@ -1,3 +1,4 @@
+// functions/src/index.ts
 import * as admin from "firebase-admin";
 import { onSchedule } from "firebase-functions/v2/scheduler";
 import { onDocumentUpdated, onDocumentWritten } from "firebase-functions/v2/firestore";
@@ -5,6 +6,7 @@ import { onDocumentUpdated, onDocumentWritten } from "firebase-functions/v2/fire
 admin.initializeApp();
 const db = admin.firestore();
 
+// Helper function to publish reviews
 async function publishReviewsForBooking(bookingId: string, bookingData: admin.firestore.DocumentData) {
   const firestore = admin.firestore();
   console.log(`Attempting to publish reviews for booking: ${bookingId}`);
@@ -18,10 +20,8 @@ async function publishReviewsForBooking(bookingId: string, bookingData: admin.fi
   const bookingDocRef = firestore.collection("bookings").doc(bookingId);
   const reviewDate = bookingData.completedAt || admin.firestore.FieldValue.serverTimestamp();
 
-  // --- THIS IS THE FINAL FIX (Part 1) ---
-  // We now save the customer's review to the correct PERFORMER subcollection.
   if (bookingData.customerReviewSubmitted) {
-    const publicReviewRef = firestore.collection(`performers/${bookingData.performerId}/reviews`).doc();
+    const publicReviewRef = firestore.collection("reviews").doc();
     batch.set(publicReviewRef, {
       bookingId,
       performerId: bookingData.performerId,
@@ -35,10 +35,8 @@ async function publishReviewsForBooking(bookingId: string, bookingData: admin.fi
     });
   }
 
-  // --- THIS IS THE FINAL FIX (Part 2) ---
-  // We now save the performer's review to the correct CUSTOMER subcollection.
   if (bookingData.performerReviewSubmitted) {
-    const publicReviewRef = firestore.collection(`customers/${bookingData.userId}/reviews`).doc();
+    const publicReviewRef = firestore.collection("reviews").doc();
     batch.set(publicReviewRef, {
       bookingId,
       performerId: bookingData.performerId,
@@ -57,39 +55,70 @@ async function publishReviewsForBooking(bookingId: string, bookingData: admin.fi
   console.log(`Successfully published public reviews for booking: ${bookingId}`);
 }
 
-// === All your triggers below this are PERFECT andUNCHANGED ===
-export const checkOverdueReviews = onSchedule("every 24 hours", async (event) => { /* ... */ });
-export const onBookingReviewUpdate = onDocumentUpdated("bookings/{bookingId}", async (event) => { /* ... */ });
-export const updateCustomerRating = onDocumentWritten("customers/{customerId}/reviews/{reviewId}", async (event) => {
-    // ... your existing, correct code
+// === TRIGGER 1: Check on a schedule ===
+export const checkOverdueReviews = onSchedule("every 24 hours", async (event) => {
+  console.log("Checking for overdue reviews to publish...");
+  const now = admin.firestore.Timestamp.now();
+
+  const overdueBookingsQuery = db.collection("bookings")
+    .where("reviewDeadline", "<=", now)
+    .where("publicReviewsCreated", "==", false);
+
+  const overdueSnaps = await overdueBookingsQuery.get();
+  if (overdueSnaps.empty) {
+    console.log("No overdue reviews to publish.");
+    return;
+  }
+
+  const promises = overdueSnaps.docs.map(doc => publishReviewsForBooking(doc.id, doc.data()));
+  await Promise.all(promises);
+  console.log(`Processed ${overdueSnaps.size} overdue booking(s).`);
 });
 
-// You will also need a function to update the PERFORMER rating.
-export const updatePerformerRating = onDocumentWritten("performers/{performerId}/reviews/{reviewId}", async (event) => {
-    const performerId = event.params.performerId;
-    console.log(`Review changed for performer ${performerId}. Recalculating rating...`);
+// === TRIGGER 2: Instant check on update ===
+export const onBookingReviewUpdate = onDocumentUpdated("bookings/{bookingId}", async (event) => {
+  const afterData = event.data?.after.data();
+  const beforeData = event.data?.before.data();
 
-    const performerDocRef = db.collection("performers").doc(performerId);
-    const reviewsRef = performerDocRef.collection("reviews");
-    const reviewsSnapshot = await reviewsRef.get();
+  if (!afterData || !beforeData) {
+    console.log("No data found in event, exiting.");
+    return;
+  }
 
-    let totalRating = 0;
-    const reviewCount = reviewsSnapshot.size;
+  const bothSubmitted = afterData.customerReviewSubmitted && afterData.performerReviewSubmitted;
+  const wasNotPreviouslyComplete = !(beforeData.customerReviewSubmitted && beforeData.performerReviewSubmitted);
 
-    reviewsSnapshot.forEach(doc => {
-        totalRating += doc.data().rating;
+  if (bothSubmitted && wasNotPreviouslyComplete) {
+    await publishReviewsForBooking(event.params.bookingId, afterData);
+  }
+});
+
+// === TRIGGER 3: Update customer rating on new review ===
+export const updateCustomerRating = onDocumentWritten("customers/{customerId}/reviews/{reviewId}", async (event) => {
+  const customerId = event.params.customerId;
+  console.log(`Review changed for customer ${customerId}. Recalculating rating...`);
+
+  const customerDocRef = db.collection("customers").doc(customerId);
+  const reviewsRef = customerDocRef.collection("reviews");
+  const reviewsSnapshot = await reviewsRef.get();
+
+  let totalRating = 0;
+  const reviewCount = reviewsSnapshot.size;
+
+  reviewsSnapshot.forEach(doc => {
+    totalRating += doc.data().rating;
+  });
+
+  const averageRating = reviewCount > 0 ? totalRating / reviewCount : 0;
+  console.log(`New stats for ${customerId}: Count=${reviewCount}, Avg Rating=${averageRating.toFixed(2)}`);
+
+  try {
+    await customerDocRef.update({
+      rating: averageRating,
+      reviewCount: reviewCount,
     });
-
-    const averageRating = reviewCount > 0 ? totalRating / reviewCount : 0;
-    console.log(`New stats for ${performerId}: Count=${reviewCount}, Avg Rating=${averageRating.toFixed(2)}`);
-
-    try {
-        await performerDocRef.update({
-        rating: averageRating,
-        reviewCount: reviewCount,
-        });
-        console.log(`Successfully updated performer document for ${performerId}.`);
-    } catch (error) {
-        console.error(`Failed to update performer document for ${performerId}:`, error);
-    }
+    console.log(`Successfully updated customer document for ${customerId}.`);
+  } catch (error) {
+    console.error(`Failed to update customer document for ${customerId}:`, error);
+  }
 });
