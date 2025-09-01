@@ -526,7 +526,8 @@ export default function EditPerformerProfilePage() {
               <CardHeader>
                 <CardTitle className="text-2xl font-headline flex items-center"><Banknote className="w-7 h-7 mr-3 text-primary" /> Payout Information</CardTitle>
                 <CardDescription>
-                    To receive payments for your performances, you must set up a secure account with our payment processor, Stripe.
+                    To receive payments for your performances, you must set up a secure account with our payment processor, Stripe. 
+    When prompted for your industry, please select the option under "Entertainment and recreation" that best fits your talent.
                 </CardDescription>
               </CardHeader>
               <CardContent>
