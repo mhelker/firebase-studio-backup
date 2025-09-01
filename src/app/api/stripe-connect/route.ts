@@ -4,11 +4,7 @@ import { doc, getDoc, updateDoc } from 'firebase/firestore';
 // --- THIS IS THE FIX (Part 1) ---
 // We import the ADMIN database instance and name it `adminDb` for clarity.
 import { adminApp, db as adminDb } from '@/lib/firebase-admin-lazy'; 
-import { NextRequest, NextResponse } from 'next/server';
-import { Stripe } from 'stripe';
-// We ONLY import from the Admin SDK for server-side operations
 import { getAuth } from 'firebase-admin/auth';
-import { adminApp, db as adminDb } from '@/lib/firebase-admin-lazy';
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
   apiVersion: '2024-06-20',
@@ -36,15 +32,16 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    // This is YOUR correct code, using the Admin SDK's native syntax
-    const performerDocRef = adminDb.collection('performers').doc(userId);
-    const performerSnap = await performerDocRef.get();
+    // --- THIS IS THE FIX (Part 2) ---
+    // We now use the `adminDb` for all server-side database operations.
+    const performerDocRef = doc(adminDb, 'performers', userId);
+    const performerSnap = await getDoc(performerDocRef);
 
-    if (!performerSnap.exists) {
+    if (!performerSnap.exists()) {
       return NextResponse.json({ error: 'Performer profile not found' }, { status: 404 });
     }
 
-    const performerData = performerSnap.data()!;
+    const performerData = performerSnap.data();
     let stripeAccountId = performerData.stripeAccountId;
 
     if (!stripeAccountId) {
@@ -57,8 +54,8 @@ export async function POST(req: NextRequest) {
         },
       });
       stripeAccountId = account.id;
-      // Use the Admin SDK's `update` method
-      await performerDocRef.update({ stripeAccountId });
+      // This update also uses `adminDb`
+      await updateDoc(performerDocRef, { stripeAccountId });
     }
 
     const accountLink = await stripe.accountLinks.create({
