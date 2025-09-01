@@ -1,24 +1,123 @@
 rules_version = '2';
-
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // --- TEMPORARY TEST RULE ---
-    // This allows any logged-in user to update any performer document.
-    // This will tell us if the problem is in the rules or somewhere else.
-    match /performers/{performerId} {
-      allow read: if true;
-      allow create: if request.auth != null && request.auth.uid == performerId;
-      allow update: if request.auth != null;
-      allow delete: if false;
+    // Helper functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return request.auth.uid == userId;
+    }
+
+    function isAdmin() {
+      // You must replace this placeholder with your actual Firebase User ID (UID)
+      // for admin privileges to work.
+      let adminUIDs = ['csW7YstynkakD51lTaqJjlRuSCp2'];
+      return request.auth.uid in adminUIDs;
     }
     
-    // The rest of your rules remain the same for now
+    // ==========================================
+    //              Performers
+    // ==========================================
+    match /performers/{performerId} {
+      // READ: Anyone can view a performer's profile.
+      allow read: if true;
+      
+      // CREATE: Only a signed-in user can create a performer profile for themselves.
+      allow create: if isSignedIn() && isOwner(performerId);
+      
+      // UPDATE: Only the performer can update their own profile.
+      allow update: if isSignedIn() && isOwner(performerId);
+      
+      // DELETE: Not allowed from the client for safety.
+      allow delete: if false;
+
+      // SUBCOLLECTION: Reviews for a performer
+      match /reviews/{reviewId} {
+        // READ: Anyone can read reviews for a performer.
+        allow read: if true;
+        
+        // CREATE/UPDATE/DELETE: Not allowed directly from the client.
+        // This must be handled by a secure backend function (Genkit Flow)
+        // to prevent misuse.
+        allow write: if false; 
+      }
+    }
+    
+    // ==========================================
+    //              Customers
+    // ==========================================
     match /customers/{userId} {
-      allow read, create, update: if request.auth != null && request.auth.uid == userId;
+      // READ: Anyone can read public customer data like name, photo, and rating.
+      allow read: if true;
+      
+      // CREATE/UPDATE: A user can only write to their own customer document.
+      allow write: if isSignedIn() && isOwner(userId);
+
+      // SUBCOLLECTION: Reviews for a customer
+      match /reviews/{reviewId} {
+        // READ: Anyone can read reviews for a customer.
+        allow read: if true;
+        
+        // CREATE/UPDATE/DELETE: Not allowed directly from the client.
+        // Must be handled by a secure backend function (Genkit Flow).
+        allow write: if false;
+      }
+    }
+    
+    // ==========================================
+    //              Bookings
+    // ==========================================
+    match /bookings/{bookingId} {
+      // READ: A user can read a booking if they are the customer who made it,
+      // or the performer who is booked.
+      allow read: if isSignedIn() && (isOwner(resource.data.userId) || isOwner(resource.data.performerId));
+      
+      // CREATE: Only a signed-in user can create a booking.
+      // The `userId` in the booking data must match their own UID.
+      allow create: if isSignedIn() && isOwner(request.resource.data.userId);
+      
+      // UPDATE: A booking can be updated by:
+      // 1. The customer who made it (e.g., to cancel before confirmation).
+      // 2. The performer who is booked (e.g., to accept/decline/complete).
+      allow update: if isSignedIn() && (isOwner(resource.data.userId) || isOwner(resource.data.performerId));
+      
+      // DELETE: Not allowed from the client for safety. Cancel by updating status.
       allow delete: if false;
     }
 
-    // ... (your other rules for bookings, etc.)
+    // ==========================================
+    //              Feedback
+    // ==========================================
+    match /feedback/{feedbackId} {
+      // READ: Only admins can read feedback for privacy.
+      allow read: if isSignedIn() && isAdmin();
+      
+      // CREATE: Any signed-in user can submit feedback.
+      // This is handled by a Genkit Flow which enforces auth, but this rule provides a backup.
+      allow create: if isSignedIn();
+      
+      // UPDATE/DELETE: Not allowed from the client.
+      allow write: if false;
+    }
+    
+    // ==========================================
+    //              Suggestions
+    // ==========================================
+    match /suggestions/{suggestionId} {
+        // READ: Anyone can read suggestions.
+        allow read: if true;
+        
+        // CREATE: Any signed-in user can create a suggestion.
+        allow create: if isSignedIn();
+        
+        // UPDATE: Only an admin can update a suggestion (e.g., to add a comment).
+        allow update: if isSignedIn() && isAdmin();
+        
+        // DELETE: Not allowed from the client.
+        allow delete: if false;
+    }
   }
 }
