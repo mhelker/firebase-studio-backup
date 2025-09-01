@@ -25,9 +25,6 @@ import { useState, useRef } from "react";
 import { Loader2, UserPlus, UserX, AlertTriangle, Banknote, Sparkles, Image as ImageIcon, Upload } from "lucide-react";
 import Link from "next/link";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-// --- THIS IS THE FINAL FIX ---
-// The missing import for the Avatar component is now added.
-import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 import { generatePerformerDescriptions } from "@/ai/flows/generate-performer-descriptions";
 import { generatePerformerImage } from "@/ai/flows/generate-performer-image";
 import { uploadDataUrlToStorage } from "@/services/storage-service";
@@ -46,8 +43,6 @@ const profileFormSchema = z.object({
   contactEmail: z.string().email({ message: "Please enter a valid email address." }),
   specialties: z.string().optional(),
   youtubeVideoId: z.string().optional(),
-  bankAccountNumber: z.string().optional(),
-  routingNumber: z.string().optional(),
 });
 
 type ProfileFormValues = z.infer<typeof profileFormSchema>;
@@ -79,14 +74,11 @@ export default function CreatePerformerProfilePage() {
       contactEmail: user?.email || "",
       specialties: "",
       youtubeVideoId: "",
-      bankAccountNumber: "",
-      routingNumber: "",
     },
   });
 
   const handleGenerateCopy = async () => {
     const { name, talentTypes } = form.getValues();
-
     if (!name || !talentTypes) {
       toast({
         title: "Missing Information",
@@ -95,7 +87,6 @@ export default function CreatePerformerProfilePage() {
       });
       return;
     }
-
     setIsGeneratingCopy(true);
     try {
       const result = await generatePerformerDescriptions({
@@ -131,7 +122,6 @@ export default function CreatePerformerProfilePage() {
         });
         return;
     }
-
     setIsGeneratingImage(true);
     setGeneratedImagePreview(null);
     try {
@@ -146,7 +136,6 @@ export default function CreatePerformerProfilePage() {
         
         form.setValue("imageUrl", downloadURL, { shouldValidate: true });
         toast({ title: "Image Ready!", description: "Your new AI-generated profile image URL has been saved." });
-
     } catch (error) {
         console.error("Error generating or uploading image:", error);
         toast({
@@ -186,7 +175,6 @@ export default function CreatePerformerProfilePage() {
     setIsSubmitting(true);
     try {
       let finalImageUrl = data.imageUrl || "";
-
       if (selectedFile) {
         toast({ title: "Uploading Image..." });
         const storagePath = `performer-images/${user.uid}/profile-picture-${Date.now()}`;
@@ -211,8 +199,8 @@ export default function CreatePerformerProfilePage() {
         specialties: data.specialties?.split(',').map(s => s.trim()).filter(Boolean) || [],
         youtubeVideoId: data.youtubeVideoId || "",
         isFeatured: false,
-        bankAccountNumber: data.bankAccountNumber || "",
-        routingNumber: data.routingNumber || "",
+        stripeAccountId: null,
+        payoutsEnabled: false,
         createdAt: serverTimestamp(),
         isActive: true,
       };
@@ -221,9 +209,9 @@ export default function CreatePerformerProfilePage() {
 
       toast({
         title: "Profile Created!",
-        description: "Your performer profile is now live.",
+        description: "Your performer profile is now live. Redirecting you to set up your payouts.",
       });
-      router.push('/profile');
+      router.push('/profile/edit');
     } catch (error) {
       console.error("Error creating performer profile:", error);
       toast({
@@ -438,7 +426,7 @@ export default function CreatePerformerProfilePage() {
                       type="button"
                       variant="outline"
                       onClick={handleGenerateImage}
-                      disabled={isSubmitting || isGeneratingImage}
+                      disabled={isGeneratingImage || isSubmitting}
                     >
                       {isGeneratingImage ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Sparkles className="mr-2 h-4 w-4" />}
                       Generate with AI
@@ -467,48 +455,6 @@ export default function CreatePerformerProfilePage() {
             </CardContent>
           </Card>
           
-          <Card className="shadow-xl">
-              <CardHeader>
-                <CardTitle className="text-2xl font-headline flex items-center"><Banknote className="w-7 h-7 mr-3 text-primary" /> Payout Information</CardTitle>
-                <CardDescription>This is where your earnings will be sent. This information is not public.</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-6">
-                <Alert variant="destructive">
-                  <AlertTriangle className="h-4 w-4" />
-                  <AlertTitle>Prototype Environment</AlertTitle>
-                  <AlertDescription>
-                    Do not enter real bank account information. This form is for demonstration purposes only.
-                  </AlertDescription>
-                </Alert>
-                <FormField
-                  control={form.control}
-                  name="routingNumber"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Routing Number</FormLabel>
-                      <FormControl>
-                        <Input placeholder="e.g., 123456789" {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="bankAccountNumber"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Bank Account Number</FormLabel>
-                      <FormControl>
-                        <Input placeholder="e.g., 000123456789" {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              </CardContent>
-          </Card>
-
           <Button type="submit" className="w-full bg-accent hover:bg-accent/90 text-accent-foreground text-lg py-6" disabled={isSubmitting}>
             {isSubmitting && <Loader2 className="mr-2 h-5 w-5 animate-spin" />}
             Create My Profile
@@ -517,4 +463,3 @@ export default function CreatePerformerProfilePage() {
       </Form>
     </div>
   );
-}}
