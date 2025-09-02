@@ -28,9 +28,7 @@ const SubmitReviewAndTipInputSchema = z.object({
 export async function POST(req: NextRequest) {
   try {
     const admin = await getAdminFirestore();
-    if (!admin) {
-      throw new Error("Firebase Admin not configured.");
-    }
+    if (!admin) throw new Error("Firebase Admin not configured.");
     const { db: firestore, FieldValue, Timestamp } = admin;
 
     const body = await req.json();
@@ -44,7 +42,11 @@ export async function POST(req: NextRequest) {
     await firestore.runTransaction(async (transaction) => {
       const bookingDocRef = firestore.collection('bookings').doc(bookingId);
       const customerDocRef = firestore.collection('customers').doc(userId);
-      const [bookingSnap, customerSnap] = await Promise.all([transaction.get(bookingDocRef), transaction.get(customerDocRef)]);
+
+      const [bookingSnap, customerSnap] = await Promise.all([
+        transaction.get(bookingDocRef),
+        transaction.get(customerDocRef),
+      ]);
 
       if (!bookingSnap.exists) throw new Error("Booking not found.");
       if (!customerSnap.exists) throw new Error("Customer profile not found.");
@@ -52,34 +54,49 @@ export async function POST(req: NextRequest) {
 
       const privateReviewRef = firestore.collection(`performers/${performerId}/reviews`).doc();
       transaction.set(privateReviewRef, {
-        bookingId, performerId, userId, rating, comment,
+        bookingId,
+        performerId,
+        userId,
+        rating,
+        comment,
         userName: customerSnap.data()!.displayName || 'Anonymous',
         userImageUrl: customerSnap.data()!.imageUrl || '',
         date: FieldValue.serverTimestamp(),
       });
 
+      const bookingData = bookingSnap.data()!;
       const bookingUpdateData: any = {
         customerReviewSubmitted: true,
         customerRating: rating,
         customerComment: comment,
         customerName: customerSnap.data()!.displayName || 'Anonymous',
         customerImageUrl: customerSnap.data()!.imageUrl || '',
-        publicReviewsCreated: false,
       };
+
       if (tipAmount > 0) bookingUpdateData.tipAmount = tipAmount;
-      
-      if (!bookingSnap.data()!.completedAt) {
+
+      if (!bookingData.completedAt) {
         bookingUpdateData.completedAt = FieldValue.serverTimestamp();
       }
 
-      const completionTime = (bookingSnap.data()!.completedAt || Timestamp.now()) as FirebaseFirestore.Timestamp;
-      bookingUpdateData.reviewDeadline = new Timestamp(completionTime.seconds + (14 * 24 * 60 * 60), completionTime.nanoseconds);
-      
+      const completionTime = (bookingData.completedAt || Timestamp.now()) as FirebaseFirestore.Timestamp;
+      bookingUpdateData.reviewDeadline = new Timestamp(
+        completionTime.seconds + 14 * 24 * 60 * 60,
+        completionTime.nanoseconds
+      );
+
+      // Only set publicReviewsCreated to false if performer hasn't submitted their review yet
+      if (!bookingData.performerReviewSubmitted) {
+        bookingUpdateData.publicReviewsCreated = false;
+      }
+
       transaction.update(bookingDocRef, bookingUpdateData);
     });
-    
-    return NextResponse.json({ title: "Review Saved!", description: "Thank you for your feedback!" });
 
+    return NextResponse.json({
+      title: "Review Saved!",
+      description: "Thank you for your feedback!",
+    });
   } catch (error: any) {
     console.error("Error in submit-review API route:", error);
     return NextResponse.json({ message: error.message || "An internal server error occurred." }, { status: 500 });

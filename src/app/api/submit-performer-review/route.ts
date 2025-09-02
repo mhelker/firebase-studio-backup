@@ -41,7 +41,11 @@ export async function POST(req: NextRequest) {
     await firestore.runTransaction(async (transaction) => {
       const bookingDocRef = firestore.collection('bookings').doc(bookingId);
       const performerDocRef = firestore.collection('performers').doc(performerId);
-      const [bookingSnap, performerSnap] = await Promise.all([transaction.get(bookingDocRef), transaction.get(performerDocRef)]);
+
+      const [bookingSnap, performerSnap] = await Promise.all([
+        transaction.get(bookingDocRef),
+        transaction.get(performerDocRef),
+      ]);
 
       if (!bookingSnap.exists) throw new Error("Booking not found.");
       if (!performerSnap.exists) throw new Error("Performer profile not found.");
@@ -49,32 +53,47 @@ export async function POST(req: NextRequest) {
 
       const privateReviewRef = firestore.collection(`customers/${customerId}/reviews`).doc();
       transaction.set(privateReviewRef, {
-        bookingId, performerId, userId: customerId, rating, comment,
+        bookingId,
+        performerId,
+        userId: customerId,
+        rating,
+        comment,
         userName: performerSnap.data()!.name || 'Anonymous Performer',
         userImageUrl: performerSnap.data()!.imageUrl || '',
         date: FieldValue.serverTimestamp(),
       });
 
+      const bookingData = bookingSnap.data()!;
       const bookingUpdateData: any = {
         performerReviewSubmitted: true,
         performerRatingOfCustomer: rating,
         performerCommentOnCustomer: comment,
         performerName: performerSnap.data()!.name,
         performerImageUrl: performerSnap.data()!.imageUrl,
-        publicReviewsCreated: false,
       };
-      
-      if (!bookingSnap.data()!.completedAt) {
+
+      if (!bookingData.completedAt) {
         bookingUpdateData.completedAt = FieldValue.serverTimestamp();
       }
-      
-      const completionTime = (bookingSnap.data()!.completedAt || Timestamp.now()) as FirebaseFirestore.Timestamp;
-      bookingUpdateData.reviewDeadline = new Timestamp(completionTime.seconds + (14 * 24 * 60 * 60), completionTime.nanoseconds);
-      
+
+      const completionTime = (bookingData.completedAt || Timestamp.now()) as FirebaseFirestore.Timestamp;
+      bookingUpdateData.reviewDeadline = new Timestamp(
+        completionTime.seconds + 14 * 24 * 60 * 60,
+        completionTime.nanoseconds
+      );
+
+      // Only set publicReviewsCreated to false if customer hasn't submitted their review yet
+      if (!bookingData.customerReviewSubmitted) {
+        bookingUpdateData.publicReviewsCreated = false;
+      }
+
       transaction.update(bookingDocRef, bookingUpdateData);
     });
 
-    return NextResponse.json({ title: "Review Saved!", description: "Thank you for your feedback!" });
+    return NextResponse.json({
+      title: "Review Saved!",
+      description: "Thank you for your feedback!",
+    });
   } catch (error: any) {
     console.error("Error in submit-performer-review API route:", error);
     return NextResponse.json({ message: error.message || "An internal server error occurred." }, { status: 500 });
