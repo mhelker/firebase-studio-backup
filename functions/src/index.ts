@@ -6,7 +6,7 @@ admin.initializeApp();
 admin.firestore().settings({ ignoreUndefinedProperties: true });
 const db = admin.firestore();
 
-// Helper function to publish reviews
+// Helper function to publish public reviews from a booking document
 async function publishReviewsForBooking(bookingId: string, bookingData: admin.firestore.DocumentData) {
   const firestore = admin.firestore();
   console.log(`Attempting to publish reviews for booking: ${bookingId}`);
@@ -18,6 +18,8 @@ async function publishReviewsForBooking(bookingId: string, bookingData: admin.fi
 
   const batch = firestore.batch();
   const bookingDocRef = firestore.collection("bookings").doc(bookingId);
+
+  // Use bookingData.completedAt timestamp if available, otherwise server timestamp
   const reviewDate = bookingData.completedAt || admin.firestore.FieldValue.serverTimestamp();
 
   if (bookingData.customerReviewSubmitted) {
@@ -51,11 +53,12 @@ async function publishReviewsForBooking(bookingId: string, bookingData: admin.fi
   }
 
   batch.update(bookingDocRef, { publicReviewsCreated: true });
+
   await batch.commit();
   console.log(`Successfully published public reviews for booking: ${bookingId}`);
 }
 
-// === TRIGGER 1: Check on a schedule ===
+// === Trigger 1: Scheduled check for overdue reviews to publish ===
 export const checkOverdueReviews = onSchedule(
   {
     schedule: "every 24 hours",
@@ -71,6 +74,7 @@ export const checkOverdueReviews = onSchedule(
       .where("publicReviewsCreated", "==", false);
 
     const overdueSnaps = await overdueBookingsQuery.get();
+
     if (overdueSnaps.empty) {
       console.log("No overdue reviews to publish.");
       return;
@@ -79,36 +83,49 @@ export const checkOverdueReviews = onSchedule(
     const promises = overdueSnaps.docs.map((doc) =>
       publishReviewsForBooking(doc.id, doc.data())
     );
+
     await Promise.all(promises);
     console.log(`Processed ${overdueSnaps.size} overdue booking(s).`);
   }
 );
 
-// === TRIGGER 2: Instant check on update ===
+// === Trigger 2: Run instantly when a booking document updates ===
 export const onBookingReviewUpdate = onDocumentUpdated(
   {
     document: "bookings/{bookingId}",
     region: "us-west2",
   },
   async (event) => {
-    const afterData = event.data?.after.data();
-    const beforeData = event.data?.before.data();
+    console.log(`Booking document updated: ${event.params.bookingId}`);
 
-    if (!afterData || !beforeData) {
-      console.log("No data found in event, exiting.");
+    const beforeData = event.data?.before.data();
+    const afterData = event.data?.after.data();
+
+    if (!beforeData || !afterData) {
+      console.log("No data available for before or after snapshot, skipping.");
       return;
     }
 
+    // Check if both reviews are submitted in the updated data
     const bothSubmitted =
-      afterData.customerReviewSubmitted && afterData.performerReviewSubmitted;
+      afterData.customerReviewSubmitted === true &&
+      afterData.performerReviewSubmitted === true;
 
-    if (bothSubmitted) {
-      await publishReviewsForBooking(event.params.bookingId, afterData);
+    // Also check if public reviews are not yet created
+    if (bothSubmitted && !afterData.publicReviewsCreated) {
+      console.log(`Both reviews submitted for booking ${event.params.bookingId}, publishing public reviews...`);
+      try {
+        await publishReviewsForBooking(event.params.bookingId, afterData);
+      } catch (error) {
+        console.error(`Error publishing reviews for booking ${event.params.bookingId}:`, error);
+      }
+    } else {
+      console.log(`Reviews not ready or already published for booking ${event.params.bookingId}.`);
     }
   }
 );
 
-// === TRIGGER 3: Update customer rating on new review ===
+// === Trigger 3: Update customer rating when their reviews change ===
 export const updateCustomerRating = onDocumentWritten(
   {
     document: "customers/{customerId}/reviews/{reviewId}",
@@ -126,13 +143,12 @@ export const updateCustomerRating = onDocumentWritten(
     const reviewCount = reviewsSnapshot.size;
 
     reviewsSnapshot.forEach((doc) => {
-      totalRating += doc.data().rating;
+      totalRating += doc.data().rating || 0;
     });
 
     const averageRating = reviewCount > 0 ? totalRating / reviewCount : 0;
-    console.log(
-      `New stats for ${customerId}: Count=${reviewCount}, Avg Rating=${averageRating.toFixed(2)}`
-    );
+
+    console.log(`New stats for ${customerId}: Count=${reviewCount}, Avg Rating=${averageRating.toFixed(2)}`);
 
     try {
       await customerDocRef.update({
