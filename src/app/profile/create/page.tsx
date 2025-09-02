@@ -25,6 +25,7 @@ import { useState, useRef } from "react";
 import { Loader2, UserPlus, UserX, AlertTriangle, Banknote, Sparkles, Image as ImageIcon, Upload } from "lucide-react";
 import Link from "next/link";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 import { generatePerformerDescriptions } from "@/ai/flows/generate-performer-descriptions";
 import { generatePerformerImage } from "@/ai/flows/generate-performer-image";
 import { uploadDataUrlToStorage } from "@/services/storage-service";
