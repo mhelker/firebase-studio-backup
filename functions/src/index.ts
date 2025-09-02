@@ -19,7 +19,7 @@ async function publishReviewsForBooking(bookingId: string, bookingData: admin.fi
 
   const batch = firestore.batch();
   const bookingDocRef = firestore.collection("bookings").doc(bookingId);
-  const reviewDate = bookingData.completedAt || admin.firestore.Timestamp.now();
+  const reviewDate = bookingData.completedAt || admin.firestore.FieldValue.serverTimestamp();
 
   if (bookingData.customerReviewSubmitted) {
     const publicReviewRef = firestore.collection("reviews").doc();
@@ -57,7 +57,7 @@ async function publishReviewsForBooking(bookingId: string, bookingData: admin.fi
 }
 
 // === TRIGGER 1: Check on a schedule ===
-export const checkOverdueReviews = onSchedule("every 24 hours", async (event) => {
+export const checkOverdueReviews = onSchedule("every 24 hours", async () => {
   console.log("Checking for overdue reviews to publish...");
   const now = admin.firestore.Timestamp.now();
 
@@ -87,9 +87,9 @@ export const onBookingReviewUpdate = onDocumentUpdated("bookings/{bookingId}", a
   }
 
   const bothSubmitted = afterData.customerReviewSubmitted && afterData.performerReviewSubmitted;
-  const wasNotPreviouslyComplete = !(beforeData.customerReviewSubmitted && beforeData.performerReviewSubmitted);
 
-  if (bothSubmitted && wasNotPreviouslyComplete) {
+  // Only proceed if both reviews are submitted now, no need for wasNotPreviouslyComplete variable
+  if (bothSubmitted) {
     await publishReviewsForBooking(event.params.bookingId, afterData);
   }
 });
