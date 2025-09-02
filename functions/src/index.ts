@@ -4,6 +4,7 @@ import { onSchedule } from "firebase-functions/v2/scheduler";
 import { onDocumentUpdated, onDocumentWritten } from "firebase-functions/v2/firestore";
 
 admin.initializeApp();
+admin.firestore().settings({ ignoreUndefinedProperties: true });
 const db = admin.firestore();
 
 // Helper function to publish reviews
@@ -18,7 +19,7 @@ async function publishReviewsForBooking(bookingId: string, bookingData: admin.fi
 
   const batch = firestore.batch();
   const bookingDocRef = firestore.collection("bookings").doc(bookingId);
-  const reviewDate = bookingData.completedAt || admin.firestore.FieldValue.serverTimestamp();
+  const reviewDate = bookingData.completedAt || admin.firestore.Timestamp.now();
 
   if (bookingData.customerReviewSubmitted) {
     const publicReviewRef = firestore.collection("reviews").doc();
