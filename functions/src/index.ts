@@ -1,4 +1,3 @@
-// functions/src/index.ts
 import * as admin from "firebase-admin";
 import { onSchedule } from "firebase-functions/v2/scheduler";
 import { onDocumentUpdated, onDocumentWritten } from "firebase-functions/v2/firestore";
@@ -88,7 +87,6 @@ export const onBookingReviewUpdate = onDocumentUpdated("bookings/{bookingId}", a
 
   const bothSubmitted = afterData.customerReviewSubmitted && afterData.performerReviewSubmitted;
 
-  // Only proceed if both reviews are submitted now, no need for wasNotPreviouslyComplete variable
   if (bothSubmitted) {
     await publishReviewsForBooking(event.params.bookingId, afterData);
   }
