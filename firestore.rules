@@ -67,3 +67,5 @@ service cloud.firestore {
         allow write: if false;
       }
     }
+  }
+}
