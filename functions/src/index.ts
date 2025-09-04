@@ -19,9 +19,9 @@ async function publishReviewsForBooking(bookingId: string, bookingData: admin.fi
   const batch = firestore.batch();
   const bookingDocRef = firestore.collection("bookings").doc(bookingId);
 
-  // Use bookingData.completedAt timestamp if available, otherwise server timestamp
   const reviewDate = bookingData.completedAt || admin.firestore.FieldValue.serverTimestamp();
 
+  // Publish customer review
   if (bookingData.customerReviewSubmitted) {
     const publicReviewRef = firestore.collection("reviews").doc();
     batch.set(publicReviewRef, {
@@ -37,6 +37,7 @@ async function publishReviewsForBooking(bookingId: string, bookingData: admin.fi
     });
   }
 
+  // Publish performer review
   if (bookingData.performerReviewSubmitted) {
     const publicReviewRef = firestore.collection("reviews").doc();
     batch.set(publicReviewRef, {
@@ -52,10 +53,45 @@ async function publishReviewsForBooking(bookingId: string, bookingData: admin.fi
     });
   }
 
+  // Mark booking as having public reviews created
   batch.update(bookingDocRef, { publicReviewsCreated: true });
 
   await batch.commit();
   console.log(`Successfully published public reviews for booking: ${bookingId}`);
+
+  // Update performer rating after publishing
+  await updatePerformerRating(bookingData.performerId);
+}
+
+// === Update performer rating ===
+async function updatePerformerRating(performerId: string) {
+  console.log(`Updating performer rating for performerId=${performerId}`);
+  const performerDocRef = db.collection("performers").doc(performerId);
+  const reviewsRef = db.collection("reviews").where("performerId", "==", performerId);
+
+  const snapshot = await reviewsRef.get();
+  let total = 0;
+  let count = 0;
+
+  snapshot.docs.forEach((doc) => {
+    const rating = doc.data().rating;
+    if (typeof rating === "number") {
+      total += rating;
+      count++;
+    }
+  });
+
+  const averageRating = count > 0 ? total / count : 0;
+
+  try {
+    await performerDocRef.update({
+      rating: averageRating,
+      reviewCount: count,
+    });
+    console.log(`Updated performer ${performerId}: Count=${count}, Avg=${averageRating.toFixed(2)}`);
+  } catch (error) {
+    console.error(`Failed to update performer ${performerId}:`, error);
+  }
 }
 
 // === Trigger 1: Scheduled check for overdue reviews to publish ===
@@ -111,7 +147,6 @@ export const onBookingReviewUpdate = onDocumentUpdated(
       afterData.customerReviewSubmitted === true &&
       afterData.performerReviewSubmitted === true;
 
-    // Also check if public reviews are not yet created
     if (bothSubmitted && !afterData.publicReviewsCreated) {
       console.log(`Both reviews submitted for booking ${event.params.bookingId}, publishing public reviews...`);
       try {

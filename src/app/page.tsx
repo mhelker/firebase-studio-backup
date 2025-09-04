@@ -49,16 +49,16 @@ async function getPerformersData(): Promise<{ performers: Performer[], error?: s
         performersMap.set(doc.id, serializedPerformer);
       }
     });
+
     const allPerformers = Array.from(performersMap.values());
 
     // Ensure only one David Helker shown
     const davidHelkerEntries = allPerformers.filter(p => p.name === 'David Helker');
     const otherPerformers = allPerformers.filter(p => p.name !== 'David Helker');
-
     const finalPerformers = [...otherPerformers];
-    if (davidHelkerEntries.length > 0) {
-      finalPerformers.push(davidHelkerEntries[0]);
-    }
+    if (davidHelkerEntries.length > 0) finalPerformers.push(davidHelkerEntries[0]);
+
+    // Sort again by rating descending to be safe
     finalPerformers.sort((a,b) => (b.rating || 0) - (a.rating || 0));
 
     return { performers: finalPerformers };
@@ -78,7 +78,13 @@ async function getCustomersData(): Promise<{ customers: Customer[], error?: stri
   }
   try {
     const customersCollection = collection(db, "customers");
-    const q = query(customersCollection, where("reviewCount", ">", 0), orderBy("reviewCount", "desc"), orderBy("rating", "desc"), limit(8));
+    const q = query(
+      customersCollection, 
+      where("reviewCount", ">", 0), 
+      orderBy("reviewCount", "desc"), 
+      orderBy("rating", "desc"), 
+      limit(8)
+    );
     const querySnapshot = await getDocs(q);
 
     const customers = querySnapshot.docs.map(doc => {
