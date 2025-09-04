@@ -21,47 +21,35 @@ async function getPerformersData(): Promise<{ performers: Performer[], error?: s
     const q = query(performersCollection, orderBy("rating", "desc"), limit(50));
     const querySnapshot = await getDocs(q);
 
-    const performersMap = new Map<string, Performer>();
-    querySnapshot.docs.forEach(doc => {
+    const performers: Performer[] = querySnapshot.docs.map(doc => {
       const data = doc.data();
-      if (!performersMap.has(doc.id)) {
-        const serializedPerformer: Performer = {
-          id: doc.id,
-          name: data.name || 'Unnamed Performer',
-          talentTypes: data.talentTypes || [],
-          description: data.description || '',
-          longDescription: data.longDescription || '',
-          pricePerHour: data.pricePerHour || 0,
-          availability: data.availability || [],
-          locationsServed: data.locationsServed || [],
-          imageUrl: data.imageUrl || '',
-          dataAiHint: data.dataAiHint || '',
-          rating: data.rating || 0,
-          reviewCount: data.reviewCount || 0,
-          contactEmail: data.contactEmail || '',
-          specialties: data.specialties || [],
-          youtubeVideoId: data.youtubeVideoId || '',
-          isFeatured: data.isFeatured || false,
-          bankAccountNumber: data.bankAccountNumber || "",
-          routingNumber: data.routingNumber || "",
-          createdAt: data.createdAt instanceof Timestamp ? data.createdAt.toDate().toISOString() : new Date().toISOString(),
-        };
-        performersMap.set(doc.id, serializedPerformer);
-      }
+      return {
+        id: doc.id,
+        name: data.name || 'Unnamed Performer',
+        talentTypes: data.talentTypes || [],
+        description: data.description || '',
+        longDescription: data.longDescription || '',
+        pricePerHour: data.pricePerHour || 0,
+        availability: data.availability || [],
+        locationsServed: data.locationsServed || [],
+        imageUrl: data.imageUrl || '',
+        dataAiHint: data.dataAiHint || '',
+        rating: data.rating || 0,
+        reviewCount: data.reviewCount || 0,
+        contactEmail: data.contactEmail || '',
+        specialties: data.specialties || [],
+        youtubeVideoId: data.youtubeVideoId || '',
+        isFeatured: data.isFeatured || false,
+        bankAccountNumber: data.bankAccountNumber || "",
+        routingNumber: data.routingNumber || "",
+        createdAt: data.createdAt instanceof Timestamp ? data.createdAt.toDate().toISOString() : new Date().toISOString(),
+      };
     });
 
-    const allPerformers = Array.from(performersMap.values());
+    // Sort performers by rating descending
+    performers.sort((a, b) => (b.rating || 0) - (a.rating || 0));
 
-    // Ensure only one David Helker shown
-    const davidHelkerEntries = allPerformers.filter(p => p.name === 'David Helker');
-    const otherPerformers = allPerformers.filter(p => p.name !== 'David Helker');
-    const finalPerformers = [...otherPerformers];
-    if (davidHelkerEntries.length > 0) finalPerformers.push(davidHelkerEntries[0]);
-
-    // Sort again by rating descending to be safe
-    finalPerformers.sort((a,b) => (b.rating || 0) - (a.rating || 0));
-
-    return { performers: finalPerformers };
+    return { performers };
   } catch (error: any) {
     console.error("Error fetching performers:", error);
     return { 
@@ -78,13 +66,7 @@ async function getCustomersData(): Promise<{ customers: Customer[], error?: stri
   }
   try {
     const customersCollection = collection(db, "customers");
-    const q = query(
-      customersCollection, 
-      where("reviewCount", ">", 0), 
-      orderBy("reviewCount", "desc"), 
-      orderBy("rating", "desc"), 
-      limit(8)
-    );
+    const q = query(customersCollection, where("reviewCount", ">", 0), orderBy("reviewCount", "desc"), orderBy("rating", "desc"), limit(8));
     const querySnapshot = await getDocs(q);
 
     const customers = querySnapshot.docs.map(doc => {
@@ -113,7 +95,6 @@ async function getCustomersData(): Promise<{ customers: Customer[], error?: stri
     };
   }
 }
-
 
 export default async function HomePage() {
   const { performers: livePerformers, error: performersError } = await getPerformersData();
