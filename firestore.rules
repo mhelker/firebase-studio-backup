@@ -26,12 +26,15 @@ service cloud.firestore {
 
       allow create: if isSignedIn() && isOwner(performerId);
       allow update: if isSignedIn() && isOwner(performerId);
-      allow delete: if false; // No client delete
+      allow delete: if false;
 
-      // Reviews must go through secure backend
+      // Reviews for performers
       match /reviews/{reviewId} {
-        allow read: if !resource.data.pending;  // Only public reviews
-        allow write: if false;                  // Only backend/server
+        allow read: if resource.data.pending == false; // public only
+        allow create: if isSignedIn()
+                      && request.resource.data.reviewerId == request.auth.uid
+                      && request.resource.data.pending == true;
+        allow update, delete: if false; // Only backend can update pending
       }
     }
 
@@ -42,10 +45,13 @@ service cloud.firestore {
       allow read: if true;
       allow write: if isSignedIn() && isOwner(userId); // client can update self
 
-      // Reviews must go through secure backend
+      // Reviews for customers
       match /reviews/{reviewId} {
-        allow read: if !resource.data.pending;
-        allow write: if false; 
+        allow read: if resource.data.pending == false; // public only
+        allow create: if isSignedIn()
+                      && request.resource.data.reviewerId == request.auth.uid
+                      && request.resource.data.pending == true;
+        allow update, delete: if false; // Only backend can update pending
       }
     }
 
@@ -54,11 +60,8 @@ service cloud.firestore {
     // ===============================
     match /bookings/{bookingId} {
       allow read: if isSignedIn() && (isOwner(resource.data.userId) || isOwner(resource.data.performerId));
-
       allow create: if isSignedIn() && isOwner(request.resource.data.userId);
-
       allow update: if isSignedIn() && (isOwner(resource.data.userId) || isOwner(resource.data.performerId));
-
       allow delete: if false; // cancel via status update
     }
 
@@ -68,7 +71,7 @@ service cloud.firestore {
     match /feedback/{feedbackId} {
       allow read: if isSignedIn() && isAdmin();
       allow create: if isSignedIn();
-      allow write: if false;
+      allow update, delete: if false;
     }
 
     // ===============================
