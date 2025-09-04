@@ -1,15 +1,69 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    match /performers/{document=**} {
-      allow read, write: if true; // VERY PERMISSIVE - FOR TESTING ONLY
+
+    // Helper functions
+    function isSignedIn() {
+      return request.auth != null;
     }
-    match /customers/{document=**} {
-      allow read, write: if true; // VERY PERMISSIVE - FOR TESTING ONLY
+
+    function isOwner(userId) {
+      return request.auth.uid == userId;
     }
-    match /reviews/{document=**} {
-      allow read, write: if true; // VERY PERMISSIVE - FOR TESTING ONLY
+
+    function isAdmin() {
+      // You must replace this placeholder with your actual Firebase User ID (UID)
+      // for admin privileges to work.
+      let adminUIDs = ['csW7YstynkakD51lTaqJjlRuSCp2'];
+      return request.auth.uid in adminUIDs;
     }
-    // Keep other rules as is, or restrict with 'if false'
-  }
-}
+    
+    // ==========================================
+    //              Performers
+    // ==========================================
+    match /performers/{performerId} {
+      // READ: Anyone can view a performer's profile.
+      allow read: if true;
+      
+      // CREATE: Only a signed-in user can create a performer profile for themselves.
+      allow create: if isSignedIn() && isOwner(performerId);
+      
+      // UPDATE: Only the performer can update their own profile.
+      allow update: if isSignedIn() && isOwner(performerId);
+      
+      // DELETE: Not allowed from the client for safety.
+      allow delete: if false;
+
+      // SUBCOLLECTION: Reviews for a performer
+      match /reviews/{reviewId} {
+        // READ: Anyone can read reviews for a performer.
+        allow read: if true;
+        
+        // CREATE/UPDATE/DELETE: Not allowed directly from the client.
+        // This must be handled by a secure backend function (Genkit Flow)
+        // to prevent misuse.
+        allow write: if false; 
+      }
+    }
+    
+    // ==========================================
+    //              Customers
+    // ==========================================
+    match /customers/{userId} {
+      // READ: Anyone can read public customer data like name, photo, and rating.
+      allow read: if true;
+      
+      // CREATE/UPDATE: Temporarily allowing public writes to generate a needed index.
+      // IMPORTANT: Revert this to `if isSignedIn() && isOwner(userId);` after the index is created.
+      allow write: if true;
+
+      // SUBCOLLECTION: Reviews for a customer
+      match /reviews/{reviewId} {
+        // READ: Anyone can read reviews for a customer.
+        allow read: if true;
+        
+        // CREATE/UPDATE/DELETE: Not allowed directly from the client.
+        // Must be handled by a secure backend function (Genkit Flow).
+        allow write: if false;
+      }
+    }
