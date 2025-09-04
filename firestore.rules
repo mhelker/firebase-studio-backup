@@ -22,19 +22,23 @@ service cloud.firestore {
     // Performers
     // ===============================
     match /performers/{performerId} {
-      allow read: if true; // Anyone can view
-
+      allow read: if true;
       allow create: if isSignedIn() && isOwner(performerId);
       allow update: if isSignedIn() && isOwner(performerId);
       allow delete: if false;
 
-      // Reviews for performers
+      // Performer reviews
       match /reviews/{reviewId} {
-        allow read: if resource.data.pending == false; // public only
+        // Allow read for homepage & profile ranking aggregation
+        allow read: if true;
+
+        // Allow signed-in user to create review with pending=true
         allow create: if isSignedIn()
                       && request.resource.data.reviewerId == request.auth.uid
                       && request.resource.data.pending == true;
-        allow update, delete: if false; // Only backend can update pending
+
+        // Prevent updates/deletes from client
+        allow update, delete: if false;
       }
     }
 
@@ -43,15 +47,15 @@ service cloud.firestore {
     // ===============================
     match /customers/{userId} {
       allow read: if true;
-      allow write: if isSignedIn() && isOwner(userId); // client can update self
+      allow write: if isSignedIn() && isOwner(userId);
 
-      // Reviews for customers
+      // Customer reviews
       match /reviews/{reviewId} {
-        allow read: if resource.data.pending == false; // public only
+        allow read: if true;
         allow create: if isSignedIn()
                       && request.resource.data.reviewerId == request.auth.uid
                       && request.resource.data.pending == true;
-        allow update, delete: if false; // Only backend can update pending
+        allow update, delete: if false;
       }
     }
 
@@ -62,7 +66,7 @@ service cloud.firestore {
       allow read: if isSignedIn() && (isOwner(resource.data.userId) || isOwner(resource.data.performerId));
       allow create: if isSignedIn() && isOwner(request.resource.data.userId);
       allow update: if isSignedIn() && (isOwner(resource.data.userId) || isOwner(resource.data.performerId));
-      allow delete: if false; // cancel via status update
+      allow delete: if false;
     }
 
     // ===============================
