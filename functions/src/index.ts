@@ -22,9 +22,21 @@ async function publishReviewsForBooking(bookingId: string, bookingData: admin.fi
   // Use bookingData.completedAt timestamp if available, otherwise server timestamp
   const reviewDate = bookingData.completedAt || admin.firestore.FieldValue.serverTimestamp();
 
+  // --- Customer reviewed Performer ---
   if (bookingData.customerReviewSubmitted) {
     const publicReviewRef = firestore.collection("reviews").doc();
-    batch.set(publicReviewRef, {
+    const performerReviewRef = firestore
+      .collection("performers")
+      .doc(bookingData.performerId)
+      .collection("reviews")
+      .doc(publicReviewRef.id);
+    const customerReviewRef = firestore
+      .collection("customers")
+      .doc(bookingData.userId)
+      .collection("reviews")
+      .doc(publicReviewRef.id);
+
+    const reviewData = {
       bookingId,
       performerId: bookingData.performerId,
       customerId: bookingData.userId,
@@ -34,12 +46,28 @@ async function publishReviewsForBooking(bookingId: string, bookingData: admin.fi
       userName: bookingData.customerName,
       userImageUrl: bookingData.customerImageUrl,
       date: reviewDate,
-    });
+    };
+
+    batch.set(publicReviewRef, reviewData);
+    batch.set(performerReviewRef, reviewData);
+    batch.set(customerReviewRef, reviewData);
   }
 
+  // --- Performer reviewed Customer ---
   if (bookingData.performerReviewSubmitted) {
     const publicReviewRef = firestore.collection("reviews").doc();
-    batch.set(publicReviewRef, {
+    const performerReviewRef = firestore
+      .collection("performers")
+      .doc(bookingData.performerId)
+      .collection("reviews")
+      .doc(publicReviewRef.id);
+    const customerReviewRef = firestore
+      .collection("customers")
+      .doc(bookingData.userId)
+      .collection("reviews")
+      .doc(publicReviewRef.id);
+
+    const reviewData = {
       bookingId,
       performerId: bookingData.performerId,
       customerId: bookingData.userId,
@@ -49,7 +77,11 @@ async function publishReviewsForBooking(bookingId: string, bookingData: admin.fi
       userName: bookingData.performerName,
       userImageUrl: bookingData.performerImageUrl,
       date: reviewDate,
-    });
+    };
+
+    batch.set(publicReviewRef, reviewData);
+    batch.set(performerReviewRef, reviewData);
+    batch.set(customerReviewRef, reviewData);
   }
 
   batch.update(bookingDocRef, { publicReviewsCreated: true });
