@@ -1,3 +1,5 @@
+export const dynamic = "force-dynamic"; // 🚀 Always fetch fresh data, no caching
+
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { CheckCircle, Search, Sparkles, Star, AlertTriangle, Heart } from 'lucide-react';
@@ -66,7 +68,13 @@ async function getCustomersData(): Promise<{ customers: Customer[], error?: stri
   }
   try {
     const customersCollection = collection(db, "customers");
-    const q = query(customersCollection, where("reviewCount", ">", 0), orderBy("reviewCount", "desc"), orderBy("rating", "desc"), limit(8));
+    const q = query(
+      customersCollection,
+      where("reviewCount", ">", 0),
+      orderBy("reviewCount", "desc"),
+      orderBy("rating", "desc"),
+      limit(8)
+    );
     const querySnapshot = await getDocs(q);
 
     const customers = querySnapshot.docs.map(doc => {
