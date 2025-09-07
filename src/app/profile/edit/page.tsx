@@ -270,8 +270,6 @@ export default function EditPerformerProfilePage() {
             </CardHeader>
             <CardContent className="space-y-8">
 
-              {/* Fields omitted for brevity, images/videos handled below */}
-
               {/* Multiple Images */}
               {imageFields.map((field, index) => (
                 <FormItem key={field.id}>
@@ -281,7 +279,7 @@ export default function EditPerformerProfilePage() {
                       <Input {...form.register(`imageUrls.${index}`)} placeholder="https://..." />
                     </FormControl>
                     <Button type="button" variant="outline" onClick={() => handleGenerateImage(index)} disabled={isGeneratingImage}>AI</Button>
-                    {index > 0 && <Button type="button" variant="destructive" onClick={() => removeImage(index)}><Trash /></Button>}
+                    {imageFields.length > 1 && <Button type="button" variant="destructive" onClick={() => removeImage(index)}><Trash /></Button>}
                   </div>
                   {generatedImagePreview && index === imageFields.length - 1 && (
                     <div className="mt-2">
@@ -301,7 +299,7 @@ export default function EditPerformerProfilePage() {
                     <FormControl className="flex-grow">
                       <Input {...form.register(`youtubeVideoIds.${index}`)} placeholder="Video ID" />
                     </FormControl>
-                    {index > 0 && <Button type="button" variant="destructive" onClick={() => removeVideo(index)}><Trash /></Button>}
+                    {videoFields.length > 1 && <Button type="button" variant="destructive" onClick={() => removeVideo(index)}><Trash /></Button>}
                   </div>
                   <FormMessage />
                 </FormItem>
