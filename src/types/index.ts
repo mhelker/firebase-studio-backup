@@ -1,3 +1,4 @@
+
 import type { Timestamp } from "firebase/firestore";
 
 export interface Review {
@@ -5,7 +6,7 @@ export interface Review {
   bookingId: string; // The booking this review is for
   performerId: string; // The performer being reviewed
   userId: string;
-  userName: string;
+  userName:string;
   userImageUrl?: string;
   rating: number;
   comment: string;
@@ -21,23 +22,15 @@ export interface Performer {
   pricePerHour: number;
   availability: string[];
   locationsServed?: string[];
-
-  // === Images ===
-  imageUrl: string;        // Legacy single image (keep for compatibility)
-  imageUrls?: string[];    // New: multiple images
-
+  imageUrl: string;
   dataAiHint?: string;
   rating: number;
   reviewCount?: number;
   reviews?: Review[];
   contactEmail?: string;
   specialties?: string[];
-
-  // === Videos ===
   featuredPerformanceUrl?: string;
-  youtubeVideoId?: string;   // Legacy single video
-  youtubeVideoIds?: string[]; // New: multiple videos
-
+  youtubeVideoId?: string;
   isFeatured?: boolean;
   bankAccountNumber?: string;
   routingNumber?: string;
@@ -52,6 +45,7 @@ export interface Customer {
   reviewCount: number;
   createdAt: Timestamp | string;
 }
+
 
 export interface Booking {
   id: string;
@@ -68,12 +62,11 @@ export interface Booking {
   createdAt: Timestamp;
   completedAt?: Timestamp; // When the gig was marked as completed
   userId: string;
-  customerReviewSubmitted?: boolean;
+  customerReviewSubmitted?: boolean; 
   performerReviewSubmitted?: boolean;
   tipAmount?: number; // Added to store tip
   isVirtual: boolean; // Added for virtual performances
   meetingLink?: string; // Added for virtual performance link
-
   // Fields to hold review data in escrow until both parties submit
   customerRating?: number;
   customerComment?: string;
@@ -83,6 +76,7 @@ export interface Booking {
   performerCommentOnCustomer?: string;
   reviewDeadline?: Timestamp; // Added to track the 14-day review window
 }
+
 
 export interface AiRecommendedPerformer {
   id: string; // Now includes the real ID from the database
