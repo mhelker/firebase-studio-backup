@@ -14,52 +14,56 @@ function serializeTimestamp(timestamp: any): string {
   return new Date().toISOString(); // Fallback
 }
 
-async function getPerformerData(id: string): Promise<{ performer: Performer; reviews: Review[]; }> {
+async function getPerformerData(
+  id: string
+): Promise<{ performer: Performer; reviews: Review[] }> {
   // === Using the Admin SDK now ===
   const firestore = adminDb;
 
   // Fetch performer details
-  const performerDocRef = firestore.collection("performers").doc(id);
+  const performerDocRef = firestore.collection('performers').doc(id);
   const performerSnap = await performerDocRef.get();
 
   if (!performerSnap.exists) {
     notFound();
   }
-  
+
   const performerData = performerSnap.data()!;
   const serializedPerformer: Performer = {
-      id: performerSnap.id,
-      name: performerData.name || 'Unnamed Performer',
-      talentTypes: performerData.talentTypes || [],
-      description: performerData.description || '',
-      longDescription: performerData.longDescription || '',
-      pricePerHour: performerData.pricePerHour || 0,
-      availability: performerData.availability || [],
-      locationsServed: performerData.locationsServed || [],
-      imageUrl: performerData.imageUrl || '',
-      dataAiHint: performerData.dataAiHint || '',
-      rating: performerData.rating || 0,
-      reviewCount: performerData.reviewCount || 0,
-      contactEmail: performerData.contactEmail || '',
-      specialties: performerData.specialties || [],
-      youtubeVideoId: performerData.youtubeVideoId || '',
-      isFeatured: performerData.isFeatured || false,
-      bankAccountNumber: performerData.bankAccountNumber || "",
-      routingNumber: performerData.routingNumber || "",
-      createdAt: serializeTimestamp(performerData.createdAt),
+    id: performerSnap.id,
+    name: performerData.name || 'Unnamed Performer',
+    talentTypes: performerData.talentTypes || [],
+    description: performerData.description || '',
+    longDescription: performerData.longDescription || '',
+    pricePerHour: performerData.pricePerHour || 0,
+    availability: performerData.availability || [],
+    locationsServed: performerData.locationsServed || [],
+    imageUrl: performerData.imageUrl || '', // single (legacy support)
+    imageUrls: performerData.imageUrls || [], // 👈 multiple images
+    dataAiHint: performerData.dataAiHint || '',
+    rating: performerData.rating || 0,
+    reviewCount: performerData.reviewCount || 0,
+    contactEmail: performerData.contactEmail || '',
+    specialties: performerData.specialties || [],
+    youtubeVideoId: performerData.youtubeVideoId || '', // single (legacy support)
+    youtubeVideoIds: performerData.youtubeVideoIds || [], // 👈 multiple videos
+    isFeatured: performerData.isFeatured || false,
+    bankAccountNumber: performerData.bankAccountNumber || '',
+    routingNumber: performerData.routingNumber || '',
+    createdAt: serializeTimestamp(performerData.createdAt),
   };
 
   // Fetch PUBLIC reviews from the top-level collection
   const publicReviewsRef = firestore.collection('reviews');
   const reviewsQuery = publicReviewsRef
-    .where("performerId", "==", id)
-    .where("author", "==", "customer")
-    .orderBy("date", "desc")
+    .where('performerId', '==', id)
+    .where('author', '==', 'customer')
+    .orderBy('date', 'desc')
     .limit(20);
-  
+
   const reviewsSnapshot = await reviewsQuery.get();
-  
-  const serializedReviews: Review[] = reviewsSnapshot.docs.map(doc => {
+
+  const serializedReviews: Review[] = reviewsSnapshot.docs.map((doc) => {
     const reviewData = doc.data();
     return {
       id: doc.id,
@@ -80,9 +84,12 @@ async function getPerformerData(id: string): Promise<{ performer: Performer; rev
   };
 }
 
-
 // This part remains the same
-export default async function PerformerDetailPage({ params }: { params: { id: string } }) {
+export default async function PerformerDetailPage({
+  params,
+}: {
+  params: { id: string };
+}) {
   const { id } = await params;
   const { performer, reviews } = await getPerformerData(id);
 
