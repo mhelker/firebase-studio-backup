@@ -114,36 +114,11 @@ service cloud.firestore {
         // CREATE: Any signed-in user can create a suggestion.
         allow create: if isSignedIn();
         
-        // UPDATE: Allows signed-in users to update their own suggestions.
-        // If updates should only be by admins (e.g., to add an admin comment),
-        // revert to 'allow update: if isSignedIn() && isAdmin();'
-        // If your suggestions document contains a 'userId' field, you can make this more secure:
-        // allow update: if isSignedIn() && (isOwner(resource.data.userId) || isAdmin());
-        allow update: if isSignedIn(); 
+        // UPDATE: Only an admin can update a suggestion (e.g., to add a comment).
+        allow update: if isSignedIn() && isAdmin();
         
         // DELETE: Not allowed from the client.
         allow delete: if false;
-    }
-
-    // ==========================================
-    //              Questions
-    // ==========================================
-    // ADDED THIS BLOCK to match your test app's functionality
-    match /questions/{questionId} {
-      // READ: Anyone can read questions.
-      allow read: if true;
-      
-      // CREATE: Any signed-in user can create a question.
-      allow create: if isSignedIn();
-      
-      // UPDATE: Allows signed-in users to update their own questions.
-      // Similar to suggestions, if your questions document contains a 'userId' field,
-      // you can make this more secure:
-      // allow update: if isSignedIn() && isOwner(resource.data.userId);
-      allow update: if isSignedIn();
-      
-      // DELETE: Not allowed from the client.
-      allow delete: if false;
     }
   }
 }
