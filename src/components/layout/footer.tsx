@@ -1,4 +1,4 @@
-import { FeedbackForm } from "@/components/feedback-form";
+import { QuestionsSection } from "@/components/questions-section";
 
 export function Footer() {
   return (
@@ -13,11 +13,11 @@ export function Footer() {
           </p>
         </div>
         <div>
-          <h3 className="text-lg font-semibold text-primary mb-2">Have a Suggestion?</h3>
+          <h3 className="text-lg font-semibold text-primary mb-2">Have a Question?</h3>
           <p className="text-sm text-muted-foreground mb-4">
-            Help us improve! Let us know what features you'd like to see.
+            Ask the community! Post your questions and get answers.
           </p>
-          <FeedbackForm />
+          <QuestionsSection />
         </div>
       </div>
     </footer>
