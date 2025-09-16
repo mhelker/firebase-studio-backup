@@ -2,11 +2,12 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
-import { collection, serverTimestamp, addDoc } from "firebase/firestore"; 
-import { db } from '@/lib/firebase';
-import { getAuth } from 'firebase/auth'; // You might need to adjust this depending on how you handle auth server-side
-import { getFirebaseAdminApp } from '@/lib/firebase-admin-lazy'; // Assuming you have a way to verify tokens
-import { auth } from 'firebase-admin';
+import { collection, serverTimestamp, addDoc } from "firebase/firestore";
+import { db } from '@/lib/firebase'; // Assuming this is your client-side Firebase Firestore instance
+// Import the specific functions from your admin lazy file
+import { getFirebaseAdminAuth } from '@/lib/firebase-admin-lazy';
+// Removed: import { auth } from 'firebase-admin'; // No longer needed here
+// Removed: import { getAuth } from 'firebase/auth'; // This is client-side auth, not for server token verification
 
 const SubmitFeedbackInputSchema = z.object({
   feedback: z.string().min(10).max(1000).describe('The user feedback text.'),
@@ -18,8 +19,8 @@ async function getUserIdFromRequest(req: NextRequest): Promise<string | null> {
     if (authorization?.startsWith("Bearer ")) {
         const idToken = authorization.split("Bearer ")[1];
         try {
-            const adminApp = getFirebaseAdminApp();
-            const decodedToken = await auth(adminApp).verifyIdToken(idToken);
+            const adminAuth = getFirebaseAdminAuth(); // Get the Admin Auth instance
+            const decodedToken = await adminAuth.verifyIdToken(idToken); // Use it to verify the token
             return decodedToken.uid;
         } catch (error) {
             console.error("Error verifying auth token:", error);
@@ -28,7 +29,6 @@ async function getUserIdFromRequest(req: NextRequest): Promise<string | null> {
     }
     return null;
 }
-
 
 export async function POST(req: NextRequest) {
   try {
@@ -48,7 +48,7 @@ export async function POST(req: NextRequest) {
       status: 'new',
     };
 
-    await addDoc(collection(db, "feedback"), feedbackData);
+    await addDoc(collection(db, "feedback"), feedbackData); // Using client-side db
     
     return NextResponse.json({ message: "Feedback submitted successfully." });
 

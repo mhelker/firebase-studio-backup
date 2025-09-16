@@ -2,11 +2,12 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
-import { doc, updateDoc, serverTimestamp } from "firebase/firestore"; 
-import { db } from '@/lib/firebase';
+import { doc, updateDoc, serverTimestamp } from "firebase/firestore";
+import { db } from '@/lib/firebase'; // Assuming this is your client-side Firebase Firestore instance
 import { isAdmin } from '@/lib/admin-config';
-import { getFirebaseAdminApp } from '@/lib/firebase-admin-lazy';
-import { auth } from 'firebase-admin';
+// Import the specific functions from your admin lazy file
+import { getFirebaseAdminAuth } from '@/lib/firebase-admin-lazy';
+// Removed: import { auth } from 'firebase-admin'; // No longer needed here
 
 const CommentOnSuggestionInputSchema = z.object({
     suggestionId: z.string().describe("The ID of the suggestion document to comment on."),
@@ -18,8 +19,8 @@ async function getUserIdFromRequest(req: NextRequest): Promise<string | null> {
     if (authorization?.startsWith("Bearer ")) {
         const idToken = authorization.split("Bearer ")[1];
         try {
-            const adminApp = getFirebaseAdminApp();
-            const decodedToken = await auth(adminApp).verifyIdToken(idToken);
+            const adminAuth = getFirebaseAdminAuth(); // Get the Admin Auth instance
+            const decodedToken = await adminAuth.verifyIdToken(idToken); // Use it to verify the token
             return decodedToken.uid;
         } catch (error) {
             console.error("Error verifying auth token:", error);
@@ -39,7 +40,7 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const { suggestionId, comment } = CommentOnSuggestionInputSchema.parse(body);
 
-    const suggestionDocRef = doc(db, "suggestions", suggestionId);
+    const suggestionDocRef = doc(db, "suggestions", suggestionId); // Using client-side db
     await updateDoc(suggestionDocRef, {
         comment: comment,
         status: 'commented',
