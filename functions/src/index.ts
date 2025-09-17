@@ -1,4 +1,3 @@
-
 import * as admin from "firebase-admin";
 import { onSchedule } from "firebase-functions/v2/scheduler";
 import { onDocumentUpdated, onDocumentWritten } from "firebase-functions/v2/firestore";
@@ -25,6 +24,123 @@ try {
     console.error("Stripe initialization failed:", error);
     // You might want to handle this more gracefully depending on your app's needs
 }
+
+async function processMainPayout(bookingId: string, bookingData: admin.firestore.DocumentData) {
+    if (bookingData.payoutStatus === 'paid') {
+        console.log(`Skipping main payout for booking ${bookingId}: Already paid.`);
+        return;
+    }
+
+    if (!stripe) {
+        console.error("Stripe client not initialized. Cannot process payout.");
+        return;
+    }
+
+    const { performerId, performerPayout, paymentIntentId } = bookingData;
+
+    if (!performerId || !performerPayout || !paymentIntentId) {
+        console.error(`Booking ${bookingId} is missing required payout information.`);
+        return;
+    }
+
+    try {
+        const performerDoc = await db.collection("performers").doc(performerId).get();
+        if (!performerDoc.exists) {
+            throw new Error(`Performer ${performerId} not found.`);
+        }
+
+        const stripeAccountId = performerDoc.data()?.stripeAccountId;
+        if (!stripeAccountId) {
+            throw new Error(`Performer ${performerId} has not connected their Stripe account.`);
+        }
+
+        // Amount must be in cents
+        const amountInCents = Math.round(performerPayout * 100);
+
+        console.log(`Transferring main payout of ${amountInCents} cents to Stripe account ${stripeAccountId} for booking ${bookingId}.`);
+
+        const transfer = await stripe.transfers.create({
+            amount: amountInCents,
+            currency: 'usd',
+            destination: stripeAccountId,
+            source_transaction: paymentIntentId,
+            description: `Payout for booking #${bookingId}`,
+        });
+
+        console.log(`Stripe transfer successful! Transfer ID: ${transfer.id}`);
+
+        await db.collection("bookings").doc(bookingId).update({
+            payoutStatus: "paid",
+            payoutTransferId: transfer.id,
+        });
+
+    } catch (error) {
+        console.error(`Failed to process main payout for booking ${bookingId}:`, error);
+        await db.collection("bookings").doc(bookingId).update({
+            payoutStatus: "failed",
+            payoutError: (error as Error).message,
+        });
+    }
+}
+
+
+// NEW function to handle tip payouts separately
+async function processTipPayout(bookingId: string, bookingData: admin.firestore.DocumentData) {
+    if (bookingData.tipPayoutStatus === 'paid') {
+        console.log(`Skipping tip payout for booking ${bookingId}: Already paid.`);
+        return;
+    }
+    
+    if (!stripe) {
+        console.error("Stripe client not initialized. Cannot process tip payout.");
+        return;
+    }
+
+    const { performerId, tipAmount, paymentIntentId } = bookingData;
+
+    // A tip of 0 or less is not an error, just nothing to do.
+    if (!performerId || !paymentIntentId || !tipAmount || tipAmount <= 0) {
+        console.log(`Booking ${bookingId} has no tip amount to pay out.`);
+        return;
+    }
+
+    try {
+        const performerDoc = await db.collection("performers").doc(performerId).get();
+        if (!performerDoc.exists) {
+            throw new Error(`Performer ${performerId} not found.`);
+        }
+        const stripeAccountId = performerDoc.data()?.stripeAccountId;
+        if (!stripeAccountId) {
+            throw new Error(`Performer ${performerId} has not connected their Stripe account for tip payout.`);
+        }
+
+        const amountInCents = Math.round(tipAmount * 100);
+        console.log(`Transferring tip of ${amountInCents} cents to Stripe account ${stripeAccountId} for booking ${bookingId}.`);
+
+        const transfer = await stripe.transfers.create({
+            amount: amountInCents,
+            currency: 'usd',
+            destination: stripeAccountId,
+            source_transaction: paymentIntentId,
+            description: `Tip for booking #${bookingId}`,
+        });
+
+        console.log(`Stripe tip transfer successful! Transfer ID: ${transfer.id}`);
+
+        await db.collection("bookings").doc(bookingId).update({
+            tipPayoutStatus: "paid",
+            tipPayoutTransferId: transfer.id,
+        });
+
+    } catch (error) {
+        console.error(`Failed to process tip payout for booking ${bookingId}:`, error);
+        await db.collection("bookings").doc(bookingId).update({
+            tipPayoutStatus: "failed",
+            tipPayoutError: (error as Error).message,
+        });
+    }
+}
+
 
 // Helper function to publish public reviews from a booking document
 async function publishReviewsForBooking(bookingId: string, bookingData: admin.firestore.DocumentData) {
@@ -149,7 +265,7 @@ export const onBookingReviewUpdate = onDocumentUpdated(
   },
   async (event) => {
     console.log(`Booking document updated: ${event.params.bookingId}`);
-
+    
     const beforeData = event.data?.before.data();
     const afterData = event.data?.after.data();
 
@@ -158,12 +274,28 @@ export const onBookingReviewUpdate = onDocumentUpdated(
       return;
     }
 
-    // Check if both reviews are submitted in the updated data
+    // --- MAIN PAYOUT LOGIC ---
+    // If the status changed from anything to 'completed'
+    if (beforeData.status !== 'completed' && afterData.status === 'completed') {
+        console.log(`Booking ${event.params.bookingId} marked as completed. Initiating main payout.`);
+        await processMainPayout(event.params.bookingId, afterData);
+    }
+    
+    // --- TIP PAYOUT LOGIC ---
+    // If the customer review was just submitted and there's a tip
+    if (!beforeData.customerReviewSubmitted && afterData.customerReviewSubmitted && afterData.tipAmount > 0) {
+        console.log(`Customer review for booking ${event.params.bookingId} submitted with a tip. Initiating tip payout.`);
+        await processTipPayout(event.params.bookingId, afterData);
+    }
+
+
+    // --- REVIEW PUBLISHING LOGIC ---
+    // Check if both reviews are now submitted
     const bothSubmitted =
       afterData.customerReviewSubmitted === true &&
       afterData.performerReviewSubmitted === true;
 
-    // Also check if public reviews are not yet created
+    // Publish reviews immediately if both are in
     if (bothSubmitted && !afterData.publicReviewsCreated) {
       console.log(`Both reviews submitted for booking ${event.params.bookingId}, publishing public reviews...`);
       try {
@@ -172,73 +304,10 @@ export const onBookingReviewUpdate = onDocumentUpdated(
         console.error(`Error publishing reviews for booking ${event.params.bookingId}:`, error);
       }
     } else {
-      console.log(`Reviews not ready or already published for booking ${event.params.bookingId}.`);
-    }
-
-    // --- NEW PAYOUT LOGIC ---
-    // Check if the booking status changed to 'completed'
-    if (beforeData.status !== 'completed' && afterData.status === 'completed') {
-        console.log(`Booking ${event.params.bookingId} marked as completed. Initiating payout.`);
-        await processPayout(event.params.bookingId, afterData);
+      console.log(`Conditions not met or reviews already published for booking ${event.params.bookingId}.`);
     }
   }
 );
-
-async function processPayout(bookingId: string, bookingData: admin.firestore.DocumentData) {
-    if (!stripe) {
-        console.error("Stripe client not initialized. Cannot process payout.");
-        return;
-    }
-
-    const { performerId, performerPayout, tipAmount, paymentIntentId } = bookingData;
-
-    if (!performerId || !performerPayout || !paymentIntentId) {
-        console.error(`Booking ${bookingId} is missing required payout information.`);
-        return;
-    }
-
-    try {
-        const performerDoc = await db.collection("performers").doc(performerId).get();
-        if (!performerDoc.exists) {
-            throw new Error(`Performer ${performerId} not found.`);
-        }
-
-        const stripeAccountId = performerDoc.data()?.stripeAccountId;
-        if (!stripeAccountId) {
-            throw new Error(`Performer ${performerId} has not connected their Stripe account.`);
-        }
-
-        // Calculate the total payout including the tip.
-        const totalPayout = (performerPayout || 0) + (tipAmount || 0);
-
-        // Amount must be in cents
-        const amountInCents = Math.round(totalPayout * 100);
-
-        console.log(`Transferring ${amountInCents} cents to Stripe account ${stripeAccountId} for booking ${bookingId}.`);
-
-        const transfer = await stripe.transfers.create({
-            amount: amountInCents,
-            currency: 'usd',
-            destination: stripeAccountId,
-            source_transaction: paymentIntentId, // Link the transfer to the original customer payment
-            description: `Payout for booking #${bookingId} (includes $${(tipAmount || 0).toFixed(2)} tip)`,
-        });
-
-        console.log(`Stripe transfer successful! Transfer ID: ${transfer.id}`);
-
-        await db.collection("bookings").doc(bookingId).update({
-            payoutStatus: "paid",
-            payoutTransferId: transfer.id,
-        });
-
-    } catch (error) {
-        console.error(`Failed to process payout for booking ${bookingId}:`, error);
-        await db.collection("bookings").doc(bookingId).update({
-            payoutStatus: "failed",
-            payoutError: (error as Error).message,
-        });
-    }
-}
 
 
 // === Trigger 3: Update customer rating when their reviews change ===
