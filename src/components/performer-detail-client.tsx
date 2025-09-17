@@ -86,11 +86,11 @@ export function PerformerDetailClient({ performerId }: PerformerDetailClientProp
         };
         setPerformer(serializedPerformer);
 
-        const publicReviewsRef = collection(db, 'reviews');
+        // --- THIS IS THE FIX ---
+        // Query the sub-collection within the performer's document, not the root collection.
+        const reviewsRef = collection(db, 'performers', id, 'reviews');
         const reviewsQuery = query(
-          publicReviewsRef,
-          where("performerId", "==", id),
-          where("author", "==", "customer"),
+          reviewsRef,
           orderBy("date", "desc"),
           limit(20)
         );
@@ -102,7 +102,7 @@ export function PerformerDetailClient({ performerId }: PerformerDetailClientProp
             id: doc.id,
             bookingId: reviewData.bookingId || '',
             performerId: reviewData.performerId || '',
-            userId: reviewData.customerId || '',
+            userId: reviewData.userId || '', // Correctly map userId from Firestore
             userName: reviewData.userName || 'Anonymous',
             userImageUrl: reviewData.userImageUrl || '',
             rating: reviewData.rating || 0,

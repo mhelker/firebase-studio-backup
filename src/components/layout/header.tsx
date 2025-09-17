@@ -32,7 +32,7 @@ export function Header() {
     <header className="bg-card shadow-md sticky top-0 z-50">
       <div className="container mx-auto px-4 py-4 flex justify-between items-center">
         <Link href="/" className="flex items-center gap-2 text-2xl font-headline font-bold text-primary">
-          <Image src={talentHopIcon} alt="TalentHop Logo" width={100} height={100} />
+          <Image src={talentHopIcon} alt="TalentHop Logo" width={125} height={125} />
           <span>TalentHop</span>
         </Link>
         
