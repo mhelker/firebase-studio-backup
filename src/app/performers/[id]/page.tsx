@@ -11,3 +11,4 @@ export default function PerformerDetailPage({ params }: { params: { id: string }
     </div>
   );
 }
+
