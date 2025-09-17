@@ -52,6 +52,10 @@ export async function POST(req: NextRequest) {
       if (!customerSnap.exists) throw new Error("Customer profile not found.");
       if (bookingSnap.data()!.customerReviewSubmitted) throw new Error("You have already reviewed this booking.");
 
+      const customerData = customerSnap.data()!;
+      const customerName = customerData.displayName || 'Anonymous';
+      const customerImageUrl = customerData.imageUrl || '';
+
       const privateReviewRef = firestore.collection(`performers/${performerId}/reviews`).doc();
       transaction.set(privateReviewRef, {
         bookingId,
@@ -59,8 +63,8 @@ export async function POST(req: NextRequest) {
         userId,
         rating,
         comment,
-        userName: customerSnap.data()!.displayName || 'Anonymous',
-        userImageUrl: customerSnap.data()!.imageUrl || '',
+        userName: customerName,
+        userImageUrl: customerImageUrl,
         date: FieldValue.serverTimestamp(),
       });
 
@@ -69,8 +73,8 @@ export async function POST(req: NextRequest) {
         customerReviewSubmitted: true,
         customerRating: rating,
         customerComment: comment,
-        customerName: customerSnap.data()!.displayName || 'Anonymous',
-        customerImageUrl: customerSnap.data()!.imageUrl || '',
+        customerName: customerName,
+        customerImageUrl: customerImageUrl,
       };
 
       if (tipAmount > 0) bookingUpdateData.tipAmount = tipAmount;
