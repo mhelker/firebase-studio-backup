@@ -1,10 +1,30 @@
+
 import * as admin from "firebase-admin";
 import { onSchedule } from "firebase-functions/v2/scheduler";
 import { onDocumentUpdated, onDocumentWritten } from "firebase-functions/v2/firestore";
+import Stripe from "stripe";
 
 admin.initializeApp();
 admin.firestore().settings({ ignoreUndefinedProperties: true });
 const db = admin.firestore();
+
+// Initialize Stripe with the secret key from environment variables
+// IMPORTANT: Set this in your Firebase environment:
+// firebase functions:config:set stripe.secret_key="YOUR_STRIPE_SECRET_KEY"
+let stripe: Stripe;
+try {
+    const secretKey = process.env.STRIPE_SECRET_KEY;
+    if (!secretKey) {
+        throw new Error("Stripe secret key is not configured in Firebase environment.");
+    }
+    stripe = new Stripe(secretKey, {
+      apiVersion: "2024-06-20",
+    });
+    console.log("Stripe client initialized successfully.");
+} catch (error) {
+    console.error("Stripe initialization failed:", error);
+    // You might want to handle this more gracefully depending on your app's needs
+}
 
 // Helper function to publish public reviews from a booking document
 async function publishReviewsForBooking(bookingId: string, bookingData: admin.firestore.DocumentData) {
@@ -154,8 +174,72 @@ export const onBookingReviewUpdate = onDocumentUpdated(
     } else {
       console.log(`Reviews not ready or already published for booking ${event.params.bookingId}.`);
     }
+
+    // --- NEW PAYOUT LOGIC ---
+    // Check if the booking status changed to 'completed'
+    if (beforeData.status !== 'completed' && afterData.status === 'completed') {
+        console.log(`Booking ${event.params.bookingId} marked as completed. Initiating payout.`);
+        await processPayout(event.params.bookingId, afterData);
+    }
   }
 );
+
+async function processPayout(bookingId: string, bookingData: admin.firestore.DocumentData) {
+    if (!stripe) {
+        console.error("Stripe client not initialized. Cannot process payout.");
+        return;
+    }
+
+    const { performerId, performerPayout, tipAmount, paymentIntentId } = bookingData;
+
+    if (!performerId || !performerPayout || !paymentIntentId) {
+        console.error(`Booking ${bookingId} is missing required payout information.`);
+        return;
+    }
+
+    try {
+        const performerDoc = await db.collection("performers").doc(performerId).get();
+        if (!performerDoc.exists) {
+            throw new Error(`Performer ${performerId} not found.`);
+        }
+
+        const stripeAccountId = performerDoc.data()?.stripeAccountId;
+        if (!stripeAccountId) {
+            throw new Error(`Performer ${performerId} has not connected their Stripe account.`);
+        }
+
+        // Calculate the total payout including the tip.
+        const totalPayout = (performerPayout || 0) + (tipAmount || 0);
+
+        // Amount must be in cents
+        const amountInCents = Math.round(totalPayout * 100);
+
+        console.log(`Transferring ${amountInCents} cents to Stripe account ${stripeAccountId} for booking ${bookingId}.`);
+
+        const transfer = await stripe.transfers.create({
+            amount: amountInCents,
+            currency: 'usd',
+            destination: stripeAccountId,
+            source_transaction: paymentIntentId, // Link the transfer to the original customer payment
+            description: `Payout for booking #${bookingId} (includes $${(tipAmount || 0).toFixed(2)} tip)`,
+        });
+
+        console.log(`Stripe transfer successful! Transfer ID: ${transfer.id}`);
+
+        await db.collection("bookings").doc(bookingId).update({
+            payoutStatus: "paid",
+            payoutTransferId: transfer.id,
+        });
+
+    } catch (error) {
+        console.error(`Failed to process payout for booking ${bookingId}:`, error);
+        await db.collection("bookings").doc(bookingId).update({
+            payoutStatus: "failed",
+            payoutError: (error as Error).message,
+        });
+    }
+}
+
 
 // === Trigger 3: Update customer rating when their reviews change ===
 export const updateCustomerRating = onDocumentWritten(

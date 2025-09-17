@@ -34,7 +34,7 @@ function CheckoutForm({
   onPaymentSuccess,
 }: {
   booking: Booking;
-  onPaymentSuccess: () => void;
+  onPaymentSuccess: (paymentIntentId: string) => void;
 }) {
   const stripe = useStripe();
   const elements = useElements();
@@ -61,19 +61,10 @@ function CheckoutForm({
     }
 
     if (paymentIntent && paymentIntent.status === "succeeded") {
-      try {
-        const bookingRef = doc(db, "bookings", booking.id);
-        await updateDoc(bookingRef, { status: "confirmed" });
-        onPaymentSuccess();
-      } catch (dbError) {
-        console.error("Error updating booking status:", dbError);
-        setErrorMessage(
-          "Payment succeeded but updating booking failed. Please contact support."
-        );
-      }
+      onPaymentSuccess(paymentIntent.id);
+    } else {
+      setIsProcessing(false);
     }
-
-    setIsProcessing(false);
   };
 
   return (
@@ -185,8 +176,19 @@ export default function PayForBookingPage() {
     }
   }, [user, authLoading, getBookingDetails]);
 
-  const onPaymentSuccess = () => {
-    router.push("/bookings");
+  const onPaymentSuccess = async (paymentIntentId: string) => {
+    if (!booking) return;
+    try {
+      const bookingRef = doc(db, "bookings", booking.id);
+      await updateDoc(bookingRef, { 
+        status: "confirmed",
+        paymentIntentId: paymentIntentId, // Save the payment ID
+      });
+      router.push("/bookings");
+    } catch (dbError) {
+      console.error("Error updating booking status:", dbError);
+      setError("Payment succeeded but updating booking failed. Please contact support.");
+    }
   };
 
   if (isLoading || authLoading) {

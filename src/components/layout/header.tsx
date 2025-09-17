@@ -1,6 +1,7 @@
 "use client";
 
 import Link from 'next/link';
+import Image from 'next/image';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
@@ -9,6 +10,7 @@ import { Menu, Zap, LogIn, LogOut, UserCircle, CalendarDays, Lightbulb } from 'l
 import { useAuth } from '@/contexts/auth-context';
 import { usePathname } from 'next/navigation';
 import { cn } from '@/lib/utils';
+import talentHopIcon from '@/app/matt.png';
 
 export function Header() {
   const { user, loading, logOut, imageUrl } = useAuth();
@@ -24,14 +26,13 @@ export function Header() {
   
   const userInitial = user?.email?.charAt(0).toUpperCase() || 'U';
 
-  // --- CHANGE 1: THE LOGIC IS UPDATED HERE ---
   const isUserPageActive = pathname === '/profile' || pathname === '/bookings' || pathname === '/dashboard';
 
   return (
     <header className="bg-card shadow-md sticky top-0 z-50">
       <div className="container mx-auto px-4 py-4 flex justify-between items-center">
         <Link href="/" className="flex items-center gap-2 text-2xl font-headline font-bold text-primary">
-          <Zap className="h-7 w-7" />
+          <Image src={talentHopIcon} alt="TalentHop Logo" width={100} height={100} />
           <span>TalentHop</span>
         </Link>
         
@@ -75,7 +76,6 @@ export function Header() {
                   </div>
                 </DropdownMenuLabel>
                 <DropdownMenuSeparator />
-                {/* --- CHANGE 2: THE DASHBOARD LINK IS ADDED HERE --- */}
                 <DropdownMenuItem asChild>
                   <Link href="/dashboard"><UserCircle className="mr-2 h-4 w-4" /> Dashboard</Link>
                 </DropdownMenuItem>
@@ -110,7 +110,7 @@ export function Header() {
             <SheetContent side="right" className="w-[280px] sm:w-[320px] flex flex-col">
               <SheetHeader className="mb-6 border-b pb-4">
                 <SheetTitle className="text-xl text-primary flex items-center gap-2">
-                   <Zap className="h-6 w-6" /> TalentHop Menu
+                   <Image src={talentHopIcon} alt="TalentHop Logo" width={24} height={24} /> TalentHop Menu
                 </SheetTitle>
               </SheetHeader>
               <nav className="flex flex-col space-y-3 flex-grow">
