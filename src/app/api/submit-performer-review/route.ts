@@ -2,12 +2,13 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
-import { getFirestore } from 'firebase-admin/firestore';
-import { adminApp } from '@/lib/firebase-admin-lazy';
 
-// Use the lazily-initialized admin app
-const firestore = getFirestore(adminApp);
-const { FieldValue, Timestamp } = require('firebase-admin/firestore');
+// Lazily import firebase-admin
+async function getAdminFirestore() {
+  if (!process.env.FIREBASE_SERVICE_ACCOUNT) return null;
+  const { db, FieldValue, Timestamp } = await import('@/lib/firebase-admin-lazy');
+  return { db, FieldValue, Timestamp };
+}
 
 function validateFirestoreId(id: string, label: string) {
   if (!id || typeof id !== 'string' || id.includes('/')) {
@@ -25,6 +26,10 @@ const SubmitPerformerReviewInputSchema = z.object({
 
 export async function POST(req: NextRequest) {
   try {
+    const admin = await getAdminFirestore();
+    if (!admin) throw new Error("Firebase Admin not configured.");
+    const { db: firestore, FieldValue, Timestamp } = admin;
+
     const body = await req.json();
     const input = SubmitPerformerReviewInputSchema.parse(body);
     const { bookingId, customerId, rating, comment, userId: performerId } = input;
@@ -45,10 +50,18 @@ export async function POST(req: NextRequest) {
       if (!bookingSnap.exists) throw new Error("Booking not found.");
       if (!performerSnap.exists) throw new Error("Performer profile not found.");
       if (bookingSnap.data()!.performerReviewSubmitted) throw new Error("You have already reviewed this booking.");
-      
-      // Note: A performer's review of a customer does NOT go in a public collection.
-      // It only updates the booking document itself to be held in escrow.
-      // A function will later calculate the customer's average rating securely.
+
+      const privateReviewRef = firestore.collection(`customers/${customerId}/reviews`).doc();
+      transaction.set(privateReviewRef, {
+        bookingId,
+        performerId,
+        userId: customerId,
+        rating,
+        comment,
+        userName: performerSnap.data()!.name || 'Anonymous Performer',
+        userImageUrl: performerSnap.data()!.imageUrl || '',
+        date: FieldValue.serverTimestamp(),
+      });
 
       const bookingData = bookingSnap.data()!;
       const bookingUpdateData: any = {
@@ -59,20 +72,19 @@ export async function POST(req: NextRequest) {
         performerImageUrl: performerSnap.data()!.imageUrl,
       };
 
-      // Set the completion and deadline timestamps if this is the first review submitted for the booking
       if (!bookingData.completedAt) {
-        const now = Timestamp.now();
-        bookingUpdateData.completedAt = now;
-        bookingUpdateData.reviewDeadline = new Timestamp(
-          now.seconds + 14 * 24 * 60 * 60, // 14 days from now
-          now.nanoseconds
-        );
+        bookingUpdateData.completedAt = FieldValue.serverTimestamp();
       }
 
-      // If the customer has already submitted their review, this one completes the set,
-      // so we can mark public reviews as ready to be created.
-      if (bookingData.customerReviewSubmitted) {
-        bookingUpdateData.publicReviewsCreated = false; // Let the background function handle creation
+      const completionTime = (bookingData.completedAt || Timestamp.now()) as FirebaseFirestore.Timestamp;
+      bookingUpdateData.reviewDeadline = new Timestamp(
+        completionTime.seconds + 14 * 24 * 60 * 60,
+        completionTime.nanoseconds
+      );
+
+      // Only set publicReviewsCreated to false if customer hasn't submitted their review yet
+      if (!bookingData.customerReviewSubmitted) {
+        bookingUpdateData.publicReviewsCreated = false;
       }
 
       transaction.update(bookingDocRef, bookingUpdateData);
@@ -84,11 +96,6 @@ export async function POST(req: NextRequest) {
     });
   } catch (error: any) {
     console.error("Error in submit-performer-review API route:", error);
-    const errorMessage = error.message || "An internal server error occurred.";
-    // Provide a more helpful error message if the service account is likely missing
-    if (errorMessage.includes('Failed to parse service account') || errorMessage.includes('runTransaction')) {
-        return NextResponse.json({ message: "Server configuration error: Could not connect to the database securely. Please check server logs." }, { status: 500 });
-    }
-    return NextResponse.json({ message: errorMessage }, { status: 500 });
+    return NextResponse.json({ message: error.message || "An internal server error occurred." }, { status: 500 });
   }
 }

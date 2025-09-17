@@ -7,121 +7,25 @@ import { Button } from '@/components/ui/button';
 import { StarRating } from '@/components/star-rating';
 import { ReviewCard } from '@/components/review-card';
 import { BookingForm } from '@/components/booking-form';
-import { CalendarDays, DollarSign, MapPin, Users, Mail, Clock4, Award, Briefcase, PlayCircle, Loader2, Volume2, AlertTriangle } from 'lucide-react';
+import { CalendarDays, DollarSign, MapPin, Users, Mail, Clock4, Award, Briefcase, PlayCircle, Loader2, Volume2 } from 'lucide-react';
 import type { Review, Performer } from '@/types';
 import { useState, useEffect } from 'react';
 import { generateTtsAction } from '@/actions/ttsActions';
-import { doc, getDoc, collection, query, where, orderBy, limit, getDocs, Timestamp } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
-import PerformerDetailLoading from '@/app/performers/[id]/loading';
-
-// Helper to convert Firestore Timestamps to strings
-function serializeTimestamp(timestamp: any): string {
-  if (timestamp && typeof timestamp.toDate === 'function') {
-    return timestamp.toDate().toISOString();
-  }
-  if (typeof timestamp === 'string') {
-    return timestamp;
-  }
-  return new Date().toISOString(); // Fallback
-}
-
-// Helper to safely convert a field to an array
-function ensureArray(value: any): string[] {
-    if (Array.isArray(value)) {
-        return value;
-    }
-    if (typeof value === 'string' && value.length > 0) {
-        return value.split(',').map(s => s.trim());
-    }
-    return [];
-}
-
 
 interface PerformerDetailClientProps {
-  performerId: string;
+  performer: Performer;
+  reviews: Review[];
 }
 
-export function PerformerDetailClient({ performerId }: PerformerDetailClientProps) {
-  const [performer, setPerformer] = useState<Performer | null>(null);
-  const [reviews, setReviews] = useState<Review[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
+export function PerformerDetailClient({ performer, reviews }: PerformerDetailClientProps) {
   const [ttsAudio, setTtsAudio] = useState<string | null>(null);
   const [isGeneratingTts, setIsGeneratingTts] = useState(false);
   const [ttsError, setTtsError] = useState<string | null>(null);
+  const [isClient, setIsClient] = useState(false);
 
   useEffect(() => {
-    const getPerformerData = async (id: string) => {
-      setIsLoading(true);
-      setError(null);
-      try {
-        const performerDocRef = doc(db, "performers", id);
-        const performerSnap = await getDoc(performerDocRef);
-
-        if (!performerSnap.exists()) {
-          throw new Error("Performer not found.");
-        }
-
-        const performerData = performerSnap.data()!;
-        const serializedPerformer: Performer = {
-            id: performerSnap.id,
-            name: performerData.name || 'Unnamed Performer',
-            talentTypes: ensureArray(performerData.talentTypes),
-            description: performerData.description || '',
-            longDescription: performerData.longDescription || '',
-            pricePerHour: performerData.pricePerHour || 0,
-            availability: ensureArray(performerData.availability),
-            locationsServed: ensureArray(performerData.locationsServed),
-            imageUrl: performerData.imageUrl || '',
-            dataAiHint: performerData.dataAiHint || '',
-            rating: performerData.rating || 0,
-            reviewCount: performerData.reviewCount || 0,
-            contactEmail: performerData.contactEmail || '',
-            specialties: ensureArray(performerData.specialties),
-            youtubeVideoId: performerData.youtubeVideoId || '',
-            isFeatured: performerData.isFeatured || false,
-            createdAt: serializeTimestamp(performerData.createdAt),
-        };
-        setPerformer(serializedPerformer);
-
-        // --- THIS IS THE FIX ---
-        // Query the sub-collection within the performer's document, not the root collection.
-        const reviewsRef = collection(db, 'performers', id, 'reviews');
-        const reviewsQuery = query(
-          reviewsRef,
-          orderBy("date", "desc"),
-          limit(20)
-        );
-        
-        const reviewsSnapshot = await getDocs(reviewsQuery);
-        const serializedReviews: Review[] = reviewsSnapshot.docs.map(doc => {
-          const reviewData = doc.data();
-          return {
-            id: doc.id,
-            bookingId: reviewData.bookingId || '',
-            performerId: reviewData.performerId || '',
-            userId: reviewData.userId || '', // Correctly map userId from Firestore
-            userName: reviewData.userName || 'Anonymous',
-            userImageUrl: reviewData.userImageUrl || '',
-            rating: reviewData.rating || 0,
-            comment: reviewData.comment || '',
-            date: serializeTimestamp(reviewData.date),
-          };
-        });
-        setReviews(serializedReviews);
-      } catch (err: any) {
-        console.error("Error fetching performer data on client:", err);
-        setError(err.message || "Failed to load performer details.");
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    getPerformerData(performerId);
-  }, [performerId]);
-
+    setIsClient(true);
+  }, []);
 
   const handleListen = async () => {
     if (!performer?.longDescription) {
@@ -142,31 +46,11 @@ export function PerformerDetailClient({ performerId }: PerformerDetailClientProp
     }
   };
 
-  if (isLoading) {
-    return <PerformerDetailLoading />;
-  }
-
-  if (error) {
-    return (
-      <Card className="max-w-lg mx-auto border-destructive">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-destructive"><AlertTriangle /> Error Loading Profile</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <p>{error}</p>
-        </CardContent>
-      </Card>
-    );
-  }
-
-  if (!performer) {
-    return null; // Or a not found component
-  }
-
   const dataAiHintForImage = performer.dataAiHint || (performer.talentTypes && performer.talentTypes.length > 0 ? (performer.talentTypes || []).map(t => t.toLowerCase()).join(' ') : 'performer profile');
 
   return (
     <div className="max-w-4xl mx-auto space-y-8">
+      {/* --- THIS IS THE FIX: The missing Card section has been restored --- */}
       <Card className="overflow-hidden shadow-xl">
         <div className="relative h-64 md:h-96 w-full">
           <Image
@@ -295,7 +179,13 @@ export function PerformerDetailClient({ performerId }: PerformerDetailClientProp
           <CardDescription>Fill out the form below to request a booking.</CardDescription>
         </CardHeader>
         <CardContent>
-          <BookingForm performerId={performer.id} performerName={performer.name || 'this performer'} pricePerHour={performer.pricePerHour || 0} />
+          {isClient ? (
+            <BookingForm performerId={performer.id} performerName={performer.name || 'this performer'} pricePerHour={performer.pricePerHour || 0} />
+          ) : (
+            <div className="flex items-center justify-center p-6">
+              <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+            </div>
+          )}
         </CardContent>
       </Card>
 

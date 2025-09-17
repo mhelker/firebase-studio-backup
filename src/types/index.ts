@@ -35,7 +35,6 @@ export interface Performer {
   bankAccountNumber?: string;
   routingNumber?: string;
   createdAt?: Timestamp | string;
-  stripeAccountId?: string; // Add stripeAccountId
 }
 
 export interface Customer {
@@ -45,7 +44,6 @@ export interface Customer {
   rating: number;
   reviewCount: number;
   createdAt: Timestamp | string;
-  isActive?: boolean;
 }
 
 
@@ -69,7 +67,6 @@ export interface Booking {
   tipAmount?: number; // Added to store tip
   isVirtual: boolean; // Added for virtual performances
   meetingLink?: string; // Added for virtual performance link
-  paymentIntentId?: string; // To track Stripe payment for transfers
   // Fields to hold review data in escrow until both parties submit
   customerRating?: number;
   customerComment?: string;
