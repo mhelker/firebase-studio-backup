@@ -323,7 +323,7 @@ export default function ProfilePage() {
                             <Upload className="mr-2 h-4 w-4" />
                         )}
                        Upload Picture
-                    </Button>
+                    </Button>                  
                 </div>
                 <div>
                     <h4 className="font-semibold text-primary mb-2">Password Settings</h4>
@@ -394,6 +394,28 @@ export default function ProfilePage() {
                             {isUploading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Upload className="mr-2 h-4 w-4" />}
                             Upload Picture
                         </Button>
+                           {/* ✅ Stripe Dashboard button */}
+  <Button
+    onClick={async () => {
+      try {
+        const res = await fetch("/api/stripe-login-link", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ performerId: user.uid }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "Failed to create login link");
+        window.location.href = data.url;
+      } catch (err) {
+        console.error(err);
+        toast({ title: "Error", description: "Could not open Stripe dashboard.", variant: "destructive" });
+      }
+    }}
+    className="mt-2 w-full rounded bg-indigo-600 px-4 py-2 text-white hover:bg-indigo-700"
+  >
+    View My Stripe Dashboard
+  </Button>
+</div>                     
                     </div>
                      <Button asChild className="w-full" href="/dashboard">
                         <Link href="/dashboard">Go to Dashboard</Link>
