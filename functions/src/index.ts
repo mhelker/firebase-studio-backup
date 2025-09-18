@@ -230,3 +230,94 @@ export const updatePerformerRating = onDocumentWritten(
     }
   }
 );
+
+import Stripe from "stripe";
+
+// Initialize Stripe once
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || functions.config().stripe.secret, {
+  apiVersion: "2024-08-16",
+});
+
+// === Trigger 5: When performer writes a review of the customer ===
+// -> send main booking payment to performer
+export const transferOnPerformerReview = onDocumentWritten(
+  {
+    document: "bookings/{bookingId}",
+    region: "us-west2",
+  },
+  async (event) => {
+    const after = event.data?.after?.data();
+    const before = event.data?.before?.data();
+    if (!after || !before) return;
+
+    const performerJustReviewed =
+      after.performerReviewSubmitted && !before.performerReviewSubmitted;
+
+    if (!performerJustReviewed) return;
+
+    const bookingId = event.params.bookingId;
+    const { totalAmount, performerId, stripePaymentIntentId } = after;
+
+    if (!performerId || !stripePaymentIntentId || !totalAmount) {
+      console.warn(`Booking ${bookingId} missing payout fields`);
+      return;
+    }
+
+    const performerSnap = await db.collection("performers").doc(performerId).get();
+    const accountId = performerSnap.data()?.stripeAccountId;
+    if (!accountId) {
+      console.warn(`Performer ${performerId} has no Stripe account`);
+      return;
+    }
+
+    // Transfer the base payment
+    await stripe.transfers.create({
+      amount: Math.round(totalAmount * 100), // convert to cents
+      currency: "usd",
+      destination: accountId,
+      source_transaction: stripePaymentIntentId,
+    });
+
+    console.log(`Transferred booking amount to performer ${performerId}`);
+  }
+);
+
+// === Trigger 6: When customer writes a review ===
+// -> send tip to performer
+export const transferTipOnCustomerReview = onDocumentWritten(
+  {
+    document: "bookings/{bookingId}",
+    region: "us-west2",
+  },
+  async (event) => {
+    const after = event.data?.after?.data();
+    const before = event.data?.before?.data();
+    if (!after || !before) return;
+
+    const customerJustReviewed =
+      after.customerReviewSubmitted && !before.customerReviewSubmitted;
+
+    if (!customerJustReviewed) return;
+
+    const bookingId = event.params.bookingId;
+    const { tipAmount, performerId, stripePaymentIntentId } = after;
+
+    if (!tipAmount || tipAmount <= 0) return;
+
+    const performerSnap = await db.collection("performers").doc(performerId).get();
+    const accountId = performerSnap.data()?.stripeAccountId;
+    if (!accountId) {
+      console.warn(`Performer ${performerId} has no Stripe account`);
+      return;
+    }
+
+    await stripe.transfers.create({
+      amount: Math.round(tipAmount * 100),
+      currency: "usd",
+      destination: accountId,
+      source_transaction: stripePaymentIntentId,
+    });
+
+    console.log(`Transferred tip to performer ${performerId}`);
+  }
+);
