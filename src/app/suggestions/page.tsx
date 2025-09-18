@@ -16,7 +16,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
 import { useState, useEffect } from 'react';
-import { Loader2, Lightbulb, Send, CheckCircle, MessageSquare } from 'lucide-react';
+import { Loader2, Lightbulb, Send, MessageSquare } from 'lucide-react';
 import type { SuggestionItem } from '@/types';
 import { collection, query, orderBy, onSnapshot } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
@@ -28,17 +28,22 @@ import Link from 'next/link';
 
 // --- Form Schemas ---
 const suggestionFormSchema = z.object({
-  suggestion: z.string().min(10, { message: "Your suggestion must be at least 10 characters." })
-                    .max(500, { message: "Your suggestion must be less than 500 characters." }),
+  suggestion: z.string().min(10).max(500),
 });
 type SuggestionFormValues = z.infer<typeof suggestionFormSchema>;
 
 const commentFormSchema = z.object({
-  comment: z.string().min(10, "Your comment must be at least 10 characters."),
+  comment: z.string().min(10),
 });
 type CommentFormValues = z.infer<typeof commentFormSchema>;
 
-// --- Comment Form Component ---
+type Comment = {
+  text: string;
+  commentedAt: any; // Firestore timestamp or JS Date
+  commentedBy: string;
+};
+
+// --- Comment Form ---
 function CommentForm({ suggestionId, onCommented }: { suggestionId: string; onCommented: () => void }) {
   const { user } = useAuth();
   const { toast } = useToast();
@@ -65,6 +70,7 @@ function CommentForm({ suggestionId, onCommented }: { suggestionId: string; onCo
 
       toast({ title: "Comment Submitted!", description: "Thank you for contributing." });
       onCommented();
+      form.reset();
     } catch (error: any) {
       console.error("Error submitting comment:", error);
       toast({ title: "Error", description: error.message || "Could not submit your comment.", variant: "destructive" });
@@ -112,7 +118,7 @@ export default function SuggestionsPage() {
     defaultValues: { suggestion: "" },
   });
 
-  const canComment = !!user; // any logged-in user can comment
+  const canComment = !!user;
 
   // Fetch suggestions
   useEffect(() => {
@@ -152,7 +158,6 @@ export default function SuggestionsPage() {
 
       const result = await response.json();
       if (!response.ok) throw new Error(result.message || "Failed to submit suggestion.");
-
       toast({ title: "Suggestion Submitted!", description: "It has been added to the public board below." });
       form.reset();
     } catch (error: any) {
@@ -162,9 +167,6 @@ export default function SuggestionsPage() {
       setIsSubmitting(false);
     }
   }
-
-  const commentedSuggestions = suggestionItems.filter(item => item.status === 'commented');
-  const newSuggestions = suggestionItems.filter(item => item.status === 'new');
 
   const SubmitButtonContent = () => {
     if (!user) return <>Login to Make a Suggestion</>;
@@ -234,7 +236,7 @@ export default function SuggestionsPage() {
           </div>
         ) : (
           <Accordion type="single" collapsible className="w-full space-y-4">
-            {newSuggestions.map(item => (
+            {suggestionItems.map(item => (
               <Card key={item.id} className="bg-accent/10 border-accent">
                 <CardHeader className="p-4">
                   <div className="flex justify-between items-start">
@@ -243,50 +245,17 @@ export default function SuggestionsPage() {
                       <p className="text-xs text-muted-foreground mt-1">
                         Suggested on {format(item.createdAt.toDate(), "PPP")}
                       </p>
-                   </div>
-                    {canComment && (
-                      <Dialog
-                        open={openCommentDialog === item.id}
-                        onOpenChange={(open) => setOpenCommentDialog(open ? item.id : null)}
-                      >
-                        <DialogTrigger asChild>
-                          <Button size="sm" variant="outline" className="ml-4">
-                            <MessageSquare className="mr-2 h-4 w-4" />
-                            Add Comment
-                          </Button>
-                        </DialogTrigger>
-                        <DialogContent>
-                          <DialogHeader>
-                            <DialogTitle>Add Comment</DialogTitle>
-                            <DialogDescription>
-                              Contribute your thoughts to this suggestion.
-                            </DialogDescription>
-                          </DialogHeader>
-                          <CommentForm
-                            suggestionId={item.id}
-                            onCommented={() => setOpenCommentDialog(null)}
-                          />
-                        </DialogContent>
-                      </Dialog>
-                    )}
-                  </div>
-                </CardHeader>
-              </Card>
-            ))}
-
-            {commentedSuggestions.map(item => (
-              <Card key={item.id} className="bg-muted/20">
-                <CardHeader className="p-4">
-                  <div className="flex justify-between items-start">
-                    <div>
-                      <p className="font-semibold">{item.suggestion}</p>
-                      <p className="text-xs text-muted-foreground mt-1">
-                        Suggested on {format(item.createdAt.toDate(), "PPP")}
-                      </p>
-                      {item.comment && (
-                        <p className="mt-2 text-sm text-foreground">
-                          💬 {item.comment}
-                        </p>
+                      {item.comments && item.comments.length > 0 && (
+                        <div className="mt-2 space-y-2">
+                          {item.comments.map((c: Comment, idx: number) => (
+                            <div key={idx} className="p-2 bg-secondary/20 rounded">
+                              <p className="text-sm">{c.text}</p>
+                              <p className="text-xs text-muted-foreground">
+                                Commented on {c.commentedAt.toDate ? format(c.commentedAt.toDate(), "PPP") : format(new Date(c.commentedAt), "PPP")}
+                              </p>
+                            </div>
+                          ))}
+                        </div>
                       )}
                     </div>
                     {canComment && (
@@ -304,7 +273,7 @@ export default function SuggestionsPage() {
                           <DialogHeader>
                             <DialogTitle>Add Comment</DialogTitle>
                             <DialogDescription>
-                              Share another thought about this suggestion.
+                              Share your thoughts on this suggestion.
                             </DialogDescription>
                           </DialogHeader>
                           <CommentForm
@@ -318,7 +287,6 @@ export default function SuggestionsPage() {
                 </CardHeader>
               </Card>
             ))}
-
             {suggestionItems.length === 0 && (
               <p className="text-center text-muted-foreground py-8">
                 No suggestions yet. Be the first to share an idea!

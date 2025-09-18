@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getFirebaseAdminAuth, getFirebaseAdminFirestore } from "@/lib/firebase-admin-lazy";
+import { getFirebaseAdminAuth, getFirebaseAdminFirestore, FieldValue } from "@/lib/firebase-admin-lazy";
 import { z } from "zod";
 
-// --- Input validation schema ---
 const commentSchema = z.object({
   suggestionId: z.string().min(1),
   comment: z.string().min(10),
@@ -13,7 +12,6 @@ export async function POST(req: NextRequest) {
     const auth = getFirebaseAdminAuth();
     const db = getFirebaseAdminFirestore();
 
-    // --- 1. Get ID token from Authorization header ---
     const authHeader = req.headers.get("authorization");
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
       return NextResponse.json({ message: "Missing or invalid Authorization header." }, { status: 403 });
@@ -21,7 +19,6 @@ export async function POST(req: NextRequest) {
 
     const idToken = authHeader.split("Bearer ")[1];
 
-    // --- 2. Verify token ---
     let decodedToken;
     try {
       decodedToken = await auth.verifyIdToken(idToken);
@@ -31,7 +28,6 @@ export async function POST(req: NextRequest) {
     }
     const uid = decodedToken.uid;
 
-    // --- 3. Validate request body ---
     const body = await req.json();
     const parsed = commentSchema.safeParse(body);
     if (!parsed.success) {
@@ -39,14 +35,16 @@ export async function POST(req: NextRequest) {
     }
     const { suggestionId, comment } = parsed.data;
 
-    // --- 4. Update the suggestion document ---
     const suggestionRef = db.collection("suggestions").doc(suggestionId);
 
+    // --- Add new comment to comments array ---
     await suggestionRef.update({
-      comment,
-      commentedAt: new Date(),
+      comments: FieldValue.arrayUnion({
+        text: comment,
+        commentedAt: new Date(),
+        commentedBy: uid,
+      }),
       status: "commented",
-      commentedBy: uid,
     });
 
     return NextResponse.json({ message: "Comment submitted successfully!" });
