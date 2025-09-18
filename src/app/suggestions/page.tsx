@@ -25,17 +25,11 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { format } from 'date-fns';
 import Link from 'next/link';
-import { isAdmin } from '@/lib/admin-config';
 
-// --- CHANGE 1: REMOVED THE SERVER ACTION IMPORT ---
-// import { submitSuggestionAction, commentOnSuggestionAction } from '@/actions/suggestionActions';
-
+// --- Form Schemas ---
 const suggestionFormSchema = z.object({
-  suggestion: z.string().min(10, {
-    message: "Your suggestion must be at least 10 characters.",
-  }).max(500, {
-    message: "Your suggestion must be less than 500 characters.",
-  }),
+  suggestion: z.string().min(10, { message: "Your suggestion must be at least 10 characters." })
+                    .max(500, { message: "Your suggestion must be less than 500 characters." }),
 });
 type SuggestionFormValues = z.infer<typeof suggestionFormSchema>;
 
@@ -44,16 +38,15 @@ const commentFormSchema = z.object({
 });
 type CommentFormValues = z.infer<typeof commentFormSchema>;
 
-
+// --- Comment Form Component ---
 function CommentForm({ suggestionId, onCommented }: { suggestionId: string; onCommented: () => void }) {
-  const { user } = useAuth(); // Get user for auth
+  const { user } = useAuth();
   const { toast } = useToast();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const form = useForm<CommentFormValues>({ resolver: zodResolver(commentFormSchema) });
 
   async function onSubmit(data: CommentFormValues) {
     setIsSubmitting(true);
-    // --- CHANGE 2: REPLACED THE SERVER ACTION WITH A FETCH CALL ---
     try {
       if (!user) throw new Error("Authentication is required.");
       const token = await user.getIdToken();
@@ -66,7 +59,7 @@ function CommentForm({ suggestionId, onCommented }: { suggestionId: string; onCo
         },
         body: JSON.stringify({ suggestionId, comment: data.comment }),
       });
-      
+
       const result = await response.json();
       if (!response.ok) throw new Error(result.message || "Failed to submit comment.");
 
@@ -105,7 +98,7 @@ function CommentForm({ suggestionId, onCommented }: { suggestionId: string; onCo
   );
 }
 
-
+// --- Suggestions Page ---
 export default function SuggestionsPage() {
   const { toast } = useToast();
   const { user } = useAuth();
@@ -119,8 +112,9 @@ export default function SuggestionsPage() {
     defaultValues: { suggestion: "" },
   });
 
-  const isUserAdmin = isAdmin(user?.uid);
+  const canComment = !!user; // any logged-in user can comment
 
+  // Fetch suggestions
   useEffect(() => {
     const q = query(collection(db, "suggestions"), orderBy("createdAt", "desc"));
     const unsubscribe = onSnapshot(q, (querySnapshot) => {
@@ -138,13 +132,13 @@ export default function SuggestionsPage() {
     return () => unsubscribe();
   }, [toast]);
 
+  // Submit suggestion
   async function onSubmit(data: SuggestionFormValues) {
     if (!user) {
       toast({ title: "Not Authenticated", description: "You must be logged in to make a suggestion.", variant: "destructive" });
       return;
     }
     setIsSubmitting(true);
-    // --- CHANGE 3: REPLACED THE SERVER ACTION WITH A FETCH CALL ---
     try {
       const token = await user.getIdToken();
       const response = await fetch('/api/submit-suggestion', {
@@ -155,14 +149,11 @@ export default function SuggestionsPage() {
         },
         body: JSON.stringify({ suggestion: data.suggestion }),
       });
-      
+
       const result = await response.json();
       if (!response.ok) throw new Error(result.message || "Failed to submit suggestion.");
 
-      toast({
-        title: "Suggestion Submitted!",
-        description: "It has been added to the public board below.",
-      });
+      toast({ title: "Suggestion Submitted!", description: "It has been added to the public board below." });
       form.reset();
     } catch (error: any) {
       console.error("Error submitting suggestion:", error);
@@ -176,12 +167,8 @@ export default function SuggestionsPage() {
   const newSuggestions = suggestionItems.filter(item => item.status === 'new');
 
   const SubmitButtonContent = () => {
-    if (!user) {
-      return <>Login to Make a Suggestion</>;
-    }
-    if (isSubmitting) {
-      return <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Submitting...</>;
-    }
+    if (!user) return <>Login to Make a Suggestion</>;
+    if (isSubmitting) return <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Submitting...</>;
     return <><Send className="mr-2 h-4 w-4" /> Submit Suggestion</>;
   };
 
@@ -256,20 +243,29 @@ export default function SuggestionsPage() {
                       <p className="text-xs text-muted-foreground mt-1">
                         Suggested on {format(item.createdAt.toDate(), "PPP")}
                       </p>
-                    </div>
-                    {isUserAdmin && (
-                      <Dialog open={openCommentDialog === item.id} onOpenChange={(isOpen) => setOpenCommentDialog(isOpen ? item.id : null)}>
+                   </div>
+                    {canComment && (
+                      <Dialog
+                        open={openCommentDialog === item.id}
+                        onOpenChange={(open) => setOpenCommentDialog(open ? item.id : null)}
+                      >
                         <DialogTrigger asChild>
-                          <Button size="sm" variant="outline">
-                            <MessageSquare className="mr-2 h-4 w-4" /> Add Comment
+                          <Button size="sm" variant="outline" className="ml-4">
+                            <MessageSquare className="mr-2 h-4 w-4" />
+                            Add Comment
                           </Button>
                         </DialogTrigger>
                         <DialogContent>
                           <DialogHeader>
-                            <DialogTitle>Comment on Suggestion</DialogTitle>
-                            <DialogDescription className="pt-2">{item.suggestion}</DialogDescription>
+                            <DialogTitle>Add Comment</DialogTitle>
+                            <DialogDescription>
+                              Contribute your thoughts to this suggestion.
+                            </DialogDescription>
                           </DialogHeader>
-                          <CommentForm suggestionId={item.id} onCommented={() => setOpenCommentDialog(null)} />
+                          <CommentForm
+                            suggestionId={item.id}
+                            onCommented={() => setOpenCommentDialog(null)}
+                          />
                         </DialogContent>
                       </Dialog>
                     )}
@@ -277,34 +273,60 @@ export default function SuggestionsPage() {
                 </CardHeader>
               </Card>
             ))}
+
             {commentedSuggestions.map(item => (
-              <AccordionItem value={item.id} key={item.id} className="border-b-0">
-                <Card>
-                  <AccordionTrigger className="p-4 text-left hover:no-underline">
-                    <div className="flex justify-between items-center w-full">
-                      <span className="flex-1 mr-4">{item.suggestion}</span>
-                      <div className="flex items-center text-xs text-green-600 font-semibold flex-shrink-0">
-                        <CheckCircle className="w-4 h-4 mr-2" />
-                        Commented
-                      </div>
-                    </div>
-                  </AccordionTrigger>
-                  <AccordionContent className="px-4 pb-4">
-                    <div className="p-4 bg-secondary/30 rounded-md border">
-                      <p className="font-semibold text-primary mb-2">Comment:</p>
-                      <p className="text-foreground/90 whitespace-pre-wrap">{item.comment}</p>
-                      <p className="text-xs text-muted-foreground mt-3 pt-2 border-t">
-                        Commented on {item.commentedAt ? format(item.commentedAt.toDate(), "PPP") : 'N/A'}
+              <Card key={item.id} className="bg-muted/20">
+                <CardHeader className="p-4">
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <p className="font-semibold">{item.suggestion}</p>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Suggested on {format(item.createdAt.toDate(), "PPP")}
                       </p>
+                      {item.comment && (
+                        <p className="mt-2 text-sm text-foreground">
+                          💬 {item.comment}
+                        </p>
+                      )}
                     </div>
-                  </AccordionContent>
-                </Card>
-              </AccordionItem>
+                    {canComment && (
+                      <Dialog
+                        open={openCommentDialog === item.id}
+                        onOpenChange={(open) => setOpenCommentDialog(open ? item.id : null)}
+                      >
+                        <DialogTrigger asChild>
+                          <Button size="sm" variant="outline" className="ml-4">
+                            <MessageSquare className="mr-2 h-4 w-4" />
+                            Add Comment
+                          </Button>
+                        </DialogTrigger>
+                        <DialogContent>
+                          <DialogHeader>
+                            <DialogTitle>Add Comment</DialogTitle>
+                            <DialogDescription>
+                              Share another thought about this suggestion.
+                            </DialogDescription>
+                          </DialogHeader>
+                          <CommentForm
+                            suggestionId={item.id}
+                            onCommented={() => setOpenCommentDialog(null)}
+                          />
+                        </DialogContent>
+                      </Dialog>
+                    )}
+                  </div>
+                </CardHeader>
+              </Card>
             ))}
+
+            {suggestionItems.length === 0 && (
+              <p className="text-center text-muted-foreground py-8">
+                No suggestions yet. Be the first to share an idea!
+              </p>
+            )}
           </Accordion>
         )}
       </section>
-
     </div>
   );
 }
