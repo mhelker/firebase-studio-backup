@@ -1,64 +1,57 @@
-// src/app/api/comment-on-suggestion/route.ts
-
 import { NextRequest, NextResponse } from "next/server";
+import { getFirebaseAdminAuth, getFirebaseAdminFirestore } from "@/lib/firebase-admin-lazy";
 import { z } from "zod";
-import { getFirebaseAdminFirestore, getFirebaseAdminAuth } from "@/lib/firebase-admin-lazy";
 
-// Input validation
-const CommentOnSuggestionInputSchema = z.object({
-  suggestionId: z.string(),
-  comment: z.string(),
+// --- Input validation schema ---
+const commentSchema = z.object({
+  suggestionId: z.string().min(1),
+  comment: z.string().min(10),
 });
 
-// Optional: admin check
-import { isAdmin } from "@/lib/admin-config";
-
-// Get user ID from request
-async function getUserIdFromRequest(req: NextRequest): Promise<string | null> {
-  const authorization = req.headers.get("Authorization");
-  if (authorization?.startsWith("Bearer ")) {
-    const idToken = authorization.split("Bearer ")[1];
-    try {
-      const auth = getFirebaseAdminAuth();
-      const decodedToken = await auth.verifyIdToken(idToken);
-      return decodedToken.uid;
-    } catch (error) {
-      console.error("Error verifying auth token:", error);
-      return null;
-    }
-  }
-  return null;
-}
-
-// POST handler
 export async function POST(req: NextRequest) {
   try {
-    const userId = await getUserIdFromRequest(req);
+    const auth = getFirebaseAdminAuth();
+    const db = getFirebaseAdminFirestore();
 
-    if (!userId || !isAdmin(userId)) {
-      return NextResponse.json({ message: "Forbidden" }, { status: 403 });
+    // --- 1. Get ID token from Authorization header ---
+    const authHeader = req.headers.get("authorization");
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+      return NextResponse.json({ message: "Missing or invalid Authorization header." }, { status: 403 });
     }
 
+    const idToken = authHeader.split("Bearer ")[1];
+
+    // --- 2. Verify token ---
+    let decodedToken;
+    try {
+      decodedToken = await auth.verifyIdToken(idToken);
+    } catch (err) {
+      console.error("Error verifying ID token:", err);
+      return NextResponse.json({ message: "Invalid or expired token." }, { status: 403 });
+    }
+    const uid = decodedToken.uid;
+
+    // --- 3. Validate request body ---
     const body = await req.json();
-    const { suggestionId, comment } = CommentOnSuggestionInputSchema.parse(body);
+    const parsed = commentSchema.safeParse(body);
+    if (!parsed.success) {
+      return NextResponse.json({ message: "Invalid request body.", errors: parsed.error.errors }, { status: 400 });
+    }
+    const { suggestionId, comment } = parsed.data;
 
-    const db = getFirebaseAdminFirestore(); // Admin Firestore
+    // --- 4. Update the suggestion document ---
+    const suggestionRef = db.collection("suggestions").doc(suggestionId);
 
-    // 🔹 Correct Admin SDK document reference
-    const suggestionDocRef = db.doc(`suggestions/${suggestionId}`);
-
-    await suggestionDocRef.update({
+    await suggestionRef.update({
       comment,
+      commentedAt: new Date(),
       status: "commented",
-      commentedAt: new Date(), // Use JS Date with Admin SDK
+      commentedBy: uid,
     });
 
-    return NextResponse.json({ message: "Comment added successfully." });
-  } catch (error: any) {
-    console.error("Error in comment-on-suggestion API route:", error);
-    if (error instanceof z.ZodError) {
-      return NextResponse.json({ message: "Invalid input.", errors: error.errors }, { status: 400 });
-    }
-    return NextResponse.json({ message: error.message || "Internal server error." }, { status: 500 });
+    return NextResponse.json({ message: "Comment submitted successfully!" });
+  } catch (error) {
+    console.error("Error in comment-on-suggestion API:", error);
+    return NextResponse.json({ message: "Internal server error." }, { status: 500 });
   }
 }
