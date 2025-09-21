@@ -6,7 +6,7 @@ import { getAuth, Auth } from "firebase-admin/auth";
 
 let adminApp: App;
 
-// Initialize Firebase Admin App
+// Initialize Firebase Admin App if not already initialized
 try {
   adminApp = getApp();
 } catch (error) {
@@ -41,9 +41,5 @@ const db: Firestore = getFirestore(adminApp);
 // Auth instance
 const auth: Auth = getAuth(adminApp);
 
-// Export functions for API routes
-export const getFirebaseAdminFirestore = (): Firestore => db;
-export const getFirebaseAdminAuth = (): Auth => auth;
-
-// Also export some helpers if needed
-export { adminApp, FieldValue, Timestamp };
+// Export Firestore and Auth directly for API routes
+export { db, auth, FieldValue, Timestamp, adminApp };
