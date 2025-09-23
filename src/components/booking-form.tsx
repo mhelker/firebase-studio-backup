@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useForm } from "react-hook-form";
@@ -35,15 +34,20 @@ import {
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
 
-const bookingFormSchema = z.object({
-  date: z.date({
-    required_error: "A date for the performance is required.",
-  }),
-  time: z.string().regex(/^([01]\d|2[0-3]):([0-5]\d)$/, "Please enter a valid time (HH:MM)."),
-  location: z.string().min(5, "Location must be at least 5 characters long."),
-  notes: z.string().optional(),
-  isVirtual: z.boolean().default(false),
-});
+// Form schema
+const bookingFormSchema = z
+  .object({
+    date: z.date({ required_error: "A date for the performance is required." }),
+    startTime: z.string().regex(/^([01]\d|2[0-3]):([0-5]\d)$/, "Please enter a valid start time (HH:MM)."),
+    finishTime: z.string().regex(/^([01]\d|2[0-3]):([0-5]\d)$/, "Please enter a valid finish time (HH:MM)."),
+    location: z.string().min(5, "Location must be at least 5 characters long."),
+    notes: z.string().optional(),
+    isVirtual: z.boolean().default(false),
+  })
+  .refine((data) => data.finishTime > data.startTime, {
+    message: "Finish time must be after start time.",
+    path: ["finishTime"],
+  });
 
 type BookingFormValues = z.infer<typeof bookingFormSchema>;
 
@@ -64,7 +68,8 @@ export function BookingForm({ performerId, performerName, pricePerHour }: Bookin
     defaultValues: {
       location: "",
       notes: "",
-      time: "",
+      startTime: "",
+      finishTime: "",
       isVirtual: false,
     },
   });
@@ -92,7 +97,7 @@ export function BookingForm({ performerId, performerName, pricePerHour }: Bookin
     setIsSubmitting(true);
 
     try {
-      // Check if customer exists
+      // Ensure customer exists
       const customerDocRef = doc(db, "customers", user.uid);
       const customerSnap = await getDoc(customerDocRef);
 
@@ -164,6 +169,7 @@ export function BookingForm({ performerId, performerName, pricePerHour }: Bookin
   return (
     <Form {...form}>
       <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+        {/* Virtual Switch */}
         <FormField
           control={form.control}
           name="isVirtual"
@@ -174,16 +180,13 @@ export function BookingForm({ performerId, performerName, pricePerHour }: Bookin
                 <FormDescription>The performer will join via video call.</FormDescription>
               </div>
               <FormControl>
-                <Switch
-                  checked={field.value}
-                  onCheckedChange={field.onChange}
-                  disabled={isSubmitting}
-                />
+                <Switch checked={field.value} onCheckedChange={field.onChange} disabled={isSubmitting} />
               </FormControl>
             </FormItem>
           )}
         />
 
+        {/* Date Picker */}
         <FormField
           control={form.control}
           name="date"
@@ -218,23 +221,36 @@ export function BookingForm({ performerId, performerName, pricePerHour }: Bookin
           )}
         />
 
-        <FormField
-          control={form.control}
-          name="time"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>Time (HH:MM)</FormLabel>
-              <FormControl>
-                <div className="relative">
-                  <Input type="time" placeholder="e.g., 14:30" {...field} className="pl-10" disabled={isSubmitting} />
-                  <Clock className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                </div>
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
+        {/* Start & Finish Time */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          {["startTime", "finishTime"].map((timeField) => (
+            <FormField
+              key={timeField}
+              control={form.control}
+              name={timeField as "startTime" | "finishTime"}
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>{timeField === "startTime" ? "Start Time" : "Finish Time"} (HH:MM)</FormLabel>
+                  <FormControl>
+                    <div className="relative">
+                      <Input
+                        type="time"
+                        placeholder="HH:MM"
+                        {...field}
+                        className="pl-10"
+                        disabled={isSubmitting}
+                      />
+                      <Clock className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                    </div>
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+          ))}
+        </div>
 
+        {/* Location */}
         <FormField
           control={form.control}
           name="location"
@@ -253,6 +269,7 @@ export function BookingForm({ performerId, performerName, pricePerHour }: Bookin
           )}
         />
 
+        {/* Notes */}
         <FormField
           control={form.control}
           name="notes"
@@ -273,8 +290,7 @@ export function BookingForm({ performerId, performerName, pricePerHour }: Bookin
         />
 
         <div className="text-sm text-muted-foreground">
-          The performer will confirm the final price. The estimated cost for a one-hour performance is: $
-          {pricePerHour.toFixed(2)}.
+          The performer will confirm the final price. The estimated cost for a one-hour performance is: ${pricePerHour.toFixed(2)}.
         </div>
 
         <Button

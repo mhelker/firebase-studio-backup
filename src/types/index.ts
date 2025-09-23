@@ -1,12 +1,11 @@
-
 import type { Timestamp } from "firebase/firestore";
 
 export interface Review {
-  id: string; // The review document ID
-  bookingId: string; // The booking this review is for
-  performerId: string; // The performer being reviewed
+  id: string;
+  bookingId: string;
+  performerId: string;
   userId: string;
-  userName:string;
+  userName: string;
   userImageUrl?: string;
   rating: number;
   comment: string;
@@ -14,7 +13,7 @@ export interface Review {
 }
 
 export interface Performer {
-  id: string; // Document ID from Firestore
+  id: string;
   name: string;
   talentTypes: string[];
   description: string;
@@ -35,67 +34,92 @@ export interface Performer {
   bankAccountNumber?: string;
   routingNumber?: string;
   createdAt?: Timestamp | string;
+  /** Stripe connected account for payouts */
+  stripeAccountId?: string;
 }
 
 export interface Customer {
-  id: string; // Document ID from Firestore (matches user UID)
+  id: string; // Firestore UID
   displayName: string;
   imageUrl?: string;
   rating: number;
   reviewCount: number;
   createdAt: Timestamp | string;
+  isActive?: boolean;
 }
-
 
 export interface Booking {
   id: string;
-  performerId: string; // Added
+  performerId: string;
   performerName: string;
+  /** Date of event */
   date: Timestamp;
-  time: string;
+  /** Start and end times as full Timestamps for easier queries */
+  startTime: Timestamp;
+  finishTime: Timestamp;
   location: string;
-  status: 'pending' | 'awaiting_payment' | 'confirmed' | 'completed' | 'cancelled';
-  pricePerHour: number; // The total price the customer pays for the booking (e.g., for 1 hour)
-  platformFee: number; // The commission retained by TalentHop
-  performerPayout: number; // The net amount the performer receives (pricePerHour - platformFee)
+  status: "pending" | "awaiting_payment" | "confirmed" | "completed" | "cancelled";
+  pricePerHour: number;
+  platformFee: number;
+  performerPayout: number;
   notes?: string;
   createdAt: Timestamp;
-  completedAt?: Timestamp; // When the gig was marked as completed
+  completedAt?: Timestamp;
   userId: string;
-  customerReviewSubmitted?: boolean; 
+
+  // Review status
+  customerReviewSubmitted?: boolean;
   performerReviewSubmitted?: boolean;
-  tipAmount?: number; // Added to store tip
-  isVirtual: boolean; // Added for virtual performances
-  meetingLink?: string; // Added for virtual performance link
-  // Fields to hold review data in escrow until both parties submit
+  reviewDeadline?: Timestamp;
+
+  // Tip
+  tipAmount?: number;
+  tipPayoutStatus?: "pending" | "paid" | "failed";
+  tipPayoutTransferId?: string;
+  tipPayoutError?: string;
+
+  // Stripe payment / payout tracking
+  paymentIntentId?: string;
+  payoutStatus?: "pending" | "paid" | "failed";
+  payoutTransferId?: string;
+  payoutError?: string;
+
+  // Escrowed review details
   customerRating?: number;
   customerComment?: string;
   customerName?: string;
   customerImageUrl?: string;
   performerRatingOfCustomer?: number;
   performerCommentOnCustomer?: string;
-  reviewDeadline?: Timestamp; // Added to track the 14-day review window
+  performerName?: string;
+  performerImageUrl?: string;
+
+  // Virtual/remote gig info
+  isVirtual: boolean;
+  meetingLink?: string;
+
+  // Flag for publishing combined reviews once both sides submit
+  publicReviewsCreated?: boolean;
 }
 
-
 export interface AiRecommendedPerformer {
-  id: string; // Now includes the real ID from the database
+  id: string;
   name: string;
   talentTypes: string[];
   description: string;
   price: number;
   availability: string;
-  recommendationReason: string; // Added field for AI justification
+  recommendationReason: string;
   imageUrl?: string;
   dataAiHint?: string;
-  rating?: number; // Kept for potential future use or AI estimation
+  rating?: number;
 }
 
 export interface SuggestionItem {
   id: string;
   suggestion: string;
   comment: string;
-  status: 'new' | 'commented';
+  status: "new" | "commented";
   createdAt: Timestamp;
   commentedAt: Timestamp | null;
   suggestedBy: string;

@@ -1,40 +1,53 @@
 import * as admin from "firebase-admin";
+import * as functions from "firebase-functions";
 import { onSchedule } from "firebase-functions/v2/scheduler";
 import { onDocumentUpdated, onDocumentWritten } from "firebase-functions/v2/firestore";
+import Stripe from "stripe";
 
 admin.initializeApp();
 admin.firestore().settings({ ignoreUndefinedProperties: true });
 const db = admin.firestore();
 
-// Helper function to publish public reviews from a booking document
-async function publishReviewsForBooking(bookingId: string, bookingData: admin.firestore.DocumentData) {
-  const firestore = admin.firestore();
+// ---------- Stripe Initialization ----------
+const stripeSecret =
+  process.env.STRIPE_SECRET_KEY || functions.config().stripe?.secret;
+if (!stripeSecret) {
+  console.warn("⚠️  No Stripe secret key found. Transfers will fail.");
+}
+const stripe = new Stripe(stripeSecret || "", {
+  apiVersion: "2024-08-16",
+});
+
+// ---------- Helper: publish public reviews ----------
+async function publishReviewsForBooking(
+  bookingId: string,
+  bookingData: admin.firestore.DocumentData
+) {
   console.log(`Attempting to publish reviews for booking: ${bookingId}`);
 
-  if (bookingData.publicReviewsCreated === true) {
-    console.log(`Skipping booking ${bookingId}: Public reviews already created.`);
+  if (bookingData.publicReviewsCreated) {
+    console.log(`Booking ${bookingId} already has public reviews.`);
     return;
   }
 
-  const batch = firestore.batch();
-  const bookingDocRef = firestore.collection("bookings").doc(bookingId);
+  const batch = db.batch();
+  const bookingDocRef = db.collection("bookings").doc(bookingId);
+  const reviewDate =
+    bookingData.completedAt || admin.firestore.FieldValue.serverTimestamp();
 
-  // Use bookingData.completedAt timestamp if available, otherwise server timestamp
-  const reviewDate = bookingData.completedAt || admin.firestore.FieldValue.serverTimestamp();
-
-  // --- Customer reviewed Performer ---
+  // Customer reviewed Performer
   if (bookingData.customerReviewSubmitted) {
-    const publicReviewRef = firestore.collection("reviews").doc();
-    const performerReviewRef = firestore
+    const publicRef = db.collection("reviews").doc();
+    const performerRef = db
       .collection("performers")
       .doc(bookingData.performerId)
       .collection("reviews")
-      .doc(publicReviewRef.id);
-    const customerReviewRef = firestore
+      .doc(publicRef.id);
+    const customerRef = db
       .collection("customers")
       .doc(bookingData.userId)
       .collection("reviews")
-      .doc(publicReviewRef.id);
+      .doc(publicRef.id);
 
     const reviewData = {
       bookingId,
@@ -48,24 +61,24 @@ async function publishReviewsForBooking(bookingId: string, bookingData: admin.fi
       date: reviewDate,
     };
 
-    batch.set(publicReviewRef, reviewData);
-    batch.set(performerReviewRef, reviewData);
-    batch.set(customerReviewRef, reviewData);
+    batch.set(publicRef, reviewData);
+    batch.set(performerRef, reviewData);
+    batch.set(customerRef, reviewData);
   }
 
-  // --- Performer reviewed Customer ---
+  // Performer reviewed Customer
   if (bookingData.performerReviewSubmitted) {
-    const publicReviewRef = firestore.collection("reviews").doc();
-    const performerReviewRef = firestore
+    const publicRef = db.collection("reviews").doc();
+    const performerRef = db
       .collection("performers")
       .doc(bookingData.performerId)
       .collection("reviews")
-      .doc(publicReviewRef.id);
-    const customerReviewRef = firestore
+      .doc(publicRef.id);
+    const customerRef = db
       .collection("customers")
       .doc(bookingData.userId)
       .collection("reviews")
-      .doc(publicReviewRef.id);
+      .doc(publicRef.id);
 
     const reviewData = {
       bookingId,
@@ -79,172 +92,121 @@ async function publishReviewsForBooking(bookingId: string, bookingData: admin.fi
       date: reviewDate,
     };
 
-    batch.set(publicReviewRef, reviewData);
-    batch.set(performerReviewRef, reviewData);
-    batch.set(customerReviewRef, reviewData);
+    batch.set(publicRef, reviewData);
+    batch.set(performerRef, reviewData);
+    batch.set(customerRef, reviewData);
   }
 
   batch.update(bookingDocRef, { publicReviewsCreated: true });
-
   await batch.commit();
-  console.log(`Successfully published public reviews for booking: ${bookingId}`);
+  console.log(`✅ Published public reviews for booking ${bookingId}`);
 }
 
-// === Trigger 1: Scheduled check for overdue reviews to publish ===
+// ---------- 1. Scheduled check for overdue reviews ----------
 export const checkOverdueReviews = onSchedule(
-  {
-    schedule: "every 24 hours",
-    region: "us-west2",
-  },
+  { schedule: "every 24 hours", region: "us-west2" },
   async () => {
-    console.log("Checking for overdue reviews to publish...");
+    console.log("Checking for overdue reviews...");
     const now = admin.firestore.Timestamp.now();
 
-    const overdueBookingsQuery = db
+    const overdue = await db
       .collection("bookings")
       .where("reviewDeadline", "<=", now)
-      .where("publicReviewsCreated", "==", false);
+      .where("publicReviewsCreated", "==", false)
+      .get();
 
-    const overdueSnaps = await overdueBookingsQuery.get();
-
-    if (overdueSnaps.empty) {
-      console.log("No overdue reviews to publish.");
+    if (overdue.empty) {
+      console.log("No overdue reviews found.");
       return;
     }
 
-    const promises = overdueSnaps.docs.map((doc) =>
-      publishReviewsForBooking(doc.id, doc.data())
+    await Promise.all(
+      overdue.docs.map((doc) => publishReviewsForBooking(doc.id, doc.data()))
     );
-
-    await Promise.all(promises);
-    console.log(`Processed ${overdueSnaps.size} overdue booking(s).`);
+    console.log(`Processed ${overdue.size} overdue booking(s).`);
   }
 );
 
-// === Trigger 2: Run instantly when a booking document updates ===
+// ---------- 2. Publish reviews when both submitted ----------
 export const onBookingReviewUpdate = onDocumentUpdated(
-  {
-    document: "bookings/{bookingId}",
-    region: "us-west2",
-  },
+  { document: "bookings/{bookingId}", region: "us-west2" },
   async (event) => {
-    console.log(`Booking document updated: ${event.params.bookingId}`);
-
     const beforeData = event.data?.before.data();
     const afterData = event.data?.after.data();
+    const bookingId = event.params.bookingId;
 
-    if (!beforeData || !afterData) {
-      console.log("No data available for before or after snapshot, skipping.");
-      return;
-    }
+    if (!beforeData || !afterData) return;
 
-    // Check if both reviews are submitted in the updated data
     const bothSubmitted =
       afterData.customerReviewSubmitted === true &&
       afterData.performerReviewSubmitted === true;
 
-    // Also check if public reviews are not yet created
     if (bothSubmitted && !afterData.publicReviewsCreated) {
-      console.log(`Both reviews submitted for booking ${event.params.bookingId}, publishing public reviews...`);
+      console.log(`Both reviews submitted for booking ${bookingId}`);
       try {
-        await publishReviewsForBooking(event.params.bookingId, afterData);
-      } catch (error) {
-        console.error(`Error publishing reviews for booking ${event.params.bookingId}:`, error);
+        await publishReviewsForBooking(bookingId, afterData);
+      } catch (err) {
+        console.error(`Error publishing reviews for ${bookingId}:`, err);
       }
-    } else {
-      console.log(`Reviews not ready or already published for booking ${event.params.bookingId}.`);
     }
   }
 );
 
-// === Trigger 3: Update customer rating when their reviews change ===
+// ---------- 3. Update customer rating ----------
 export const updateCustomerRating = onDocumentWritten(
-  {
-    document: "customers/{customerId}/reviews/{reviewId}",
-    region: "us-west2",
-  },
+  { document: "customers/{customerId}/reviews/{reviewId}", region: "us-west2" },
   async (event) => {
     const customerId = event.params.customerId;
-    console.log(`Review changed for customer ${customerId}. Recalculating rating...`);
+    const reviewsSnap = await db
+      .collection("customers")
+      .doc(customerId)
+      .collection("reviews")
+      .get();
 
-    const customerDocRef = db.collection("customers").doc(customerId);
-    const reviewsRef = customerDocRef.collection("reviews");
-    const reviewsSnapshot = await reviewsRef.get();
+    const total = reviewsSnap.docs.reduce(
+      (sum, d) => sum + (d.data().rating || 0),
+      0
+    );
+    const count = reviewsSnap.size;
+    const avg = count > 0 ? total / count : 0;
 
-    let totalRating = 0;
-    const reviewCount = reviewsSnapshot.size;
-
-    reviewsSnapshot.forEach((doc) => {
-      totalRating += doc.data().rating || 0;
+    await db.collection("customers").doc(customerId).update({
+      rating: avg,
+      reviewCount: count,
     });
-
-    const averageRating = reviewCount > 0 ? totalRating / reviewCount : 0;
-
-    console.log(`New stats for customer ${customerId}: Count=${reviewCount}, Avg Rating=${averageRating.toFixed(2)}`);
-
-    try {
-      await customerDocRef.update({
-        rating: averageRating,
-        reviewCount: reviewCount,
-      });
-      console.log(`Successfully updated customer document for ${customerId}.`);
-    } catch (error) {
-      console.error(`Failed to update customer document for ${customerId}:`, error);
-    }
+    console.log(`Updated customer ${customerId}: ${avg.toFixed(2)}★`);
   }
 );
 
-// === Trigger 4: Update performer rating when their reviews change ===
+// ---------- 4. Update performer rating ----------
 export const updatePerformerRating = onDocumentWritten(
-  {
-    document: "performers/{performerId}/reviews/{reviewId}",
-    region: "us-west2",
-  },
+  { document: "performers/{performerId}/reviews/{reviewId}", region: "us-west2" },
   async (event) => {
     const performerId = event.params.performerId;
-    console.log(`Review changed for performer ${performerId}. Recalculating rating...`);
+    const reviewsSnap = await db
+      .collection("performers")
+      .doc(performerId)
+      .collection("reviews")
+      .get();
 
-    const performerDocRef = db.collection("performers").doc(performerId);
-    const reviewsRef = performerDocRef.collection("reviews");
-    const reviewsSnapshot = await reviewsRef.get();
+    const total = reviewsSnap.docs.reduce(
+      (sum, d) => sum + (d.data().rating || 0),
+      0
+    );
+    const count = reviewsSnap.size;
+    const avg = count > 0 ? total / count : 0;
 
-    let totalRating = 0;
-    const reviewCount = reviewsSnapshot.size;
-
-    reviewsSnapshot.forEach((doc) => {
-      totalRating += doc.data().rating || 0;
+    await db.collection("performers").doc(performerId).update({
+      rating: avg,
+      reviewCount: count,
     });
-
-    const averageRating = reviewCount > 0 ? totalRating / reviewCount : 0;
-
-    console.log(`New stats for performer ${performerId}: Count=${reviewCount}, Avg Rating=${averageRating.toFixed(2)}`);
-
-    try {
-      await performerDocRef.update({
-        rating: averageRating,
-        reviewCount: reviewCount,
-      });
-      console.log(`Successfully updated performer document for ${performerId}.`);
-    } catch (error) {
-      console.error(`Failed to update performer document for ${performerId}:`, error);
-    }
+    console.log(`Updated performer ${performerId}: ${avg.toFixed(2)}★`);
   }
 );
 
-import Stripe from "stripe";
-
-// Initialize Stripe once
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || functions.config().stripe.secret, {
-  apiVersion: "2024-08-16",
-});
-
-// === Trigger 5: When performer writes a review of the customer ===
-// -> send main booking payment to performer
+// ---------- 5. Transfer booking payment on performer review ----------
 export const transferOnPerformerReview = onDocumentWritten(
-  {
-    document: "bookings/{bookingId}",
-    region: "us-west2",
-  },
+  { document: "bookings/{bookingId}", region: "us-west2" },
   async (event) => {
     const after = event.data?.after?.data();
     const before = event.data?.before?.data();
@@ -252,43 +214,29 @@ export const transferOnPerformerReview = onDocumentWritten(
 
     const performerJustReviewed =
       after.performerReviewSubmitted && !before.performerReviewSubmitted;
-
     if (!performerJustReviewed) return;
 
-    const bookingId = event.params.bookingId;
     const { totalAmount, performerId, stripePaymentIntentId } = after;
+    if (!performerId || !stripePaymentIntentId || !totalAmount) return;
 
-    if (!performerId || !stripePaymentIntentId || !totalAmount) {
-      console.warn(`Booking ${bookingId} missing payout fields`);
-      return;
-    }
+    const performerDoc = await db.collection("performers").doc(performerId).get();
+    const accountId = performerDoc.data()?.stripeAccountId;
+    if (!accountId) return;
 
-    const performerSnap = await db.collection("performers").doc(performerId).get();
-    const accountId = performerSnap.data()?.stripeAccountId;
-    if (!accountId) {
-      console.warn(`Performer ${performerId} has no Stripe account`);
-      return;
-    }
-
-    // Transfer the base payment
     await stripe.transfers.create({
-      amount: Math.round(totalAmount * 100), // convert to cents
+      amount: Math.round(totalAmount * 100),
       currency: "usd",
       destination: accountId,
       source_transaction: stripePaymentIntentId,
     });
 
-    console.log(`Transferred booking amount to performer ${performerId}`);
+    console.log(`💸 Base payment transferred to performer ${performerId}`);
   }
 );
 
-// === Trigger 6: When customer writes a review ===
-// -> send tip to performer
+// ---------- 6. Transfer tip on customer review ----------
 export const transferTipOnCustomerReview = onDocumentWritten(
-  {
-    document: "bookings/{bookingId}",
-    region: "us-west2",
-  },
+  { document: "bookings/{bookingId}", region: "us-west2" },
   async (event) => {
     const after = event.data?.after?.data();
     const before = event.data?.before?.data();
@@ -296,20 +244,15 @@ export const transferTipOnCustomerReview = onDocumentWritten(
 
     const customerJustReviewed =
       after.customerReviewSubmitted && !before.customerReviewSubmitted;
-
     if (!customerJustReviewed) return;
 
-    const bookingId = event.params.bookingId;
     const { tipAmount, performerId, stripePaymentIntentId } = after;
-
-    if (!tipAmount || tipAmount <= 0) return;
-
-    const performerSnap = await db.collection("performers").doc(performerId).get();
-    const accountId = performerSnap.data()?.stripeAccountId;
-    if (!accountId) {
-      console.warn(`Performer ${performerId} has no Stripe account`);
+    if (!tipAmount || tipAmount <= 0 || !performerId || !stripePaymentIntentId)
       return;
-    }
+
+    const performerDoc = await db.collection("performers").doc(performerId).get();
+    const accountId = performerDoc.data()?.stripeAccountId;
+    if (!accountId) return;
 
     await stripe.transfers.create({
       amount: Math.round(tipAmount * 100),
@@ -318,6 +261,6 @@ export const transferTipOnCustomerReview = onDocumentWritten(
       source_transaction: stripePaymentIntentId,
     });
 
-    console.log(`Transferred tip to performer ${performerId}`);
+    console.log(`💸 Tip transferred to performer ${performerId}`);
   }
 );

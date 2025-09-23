@@ -1,3 +1,4 @@
+// src/app/api/comment-on-suggestion/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { getFirebaseAdminAuth, getFirebaseAdminFirestore, FieldValue } from "@/lib/firebase-admin-lazy";
 import { z } from "zod";
@@ -14,7 +15,10 @@ export async function POST(req: NextRequest) {
 
     const authHeader = req.headers.get("authorization");
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
-      return NextResponse.json({ message: "Missing or invalid Authorization header." }, { status: 403 });
+      return NextResponse.json(
+        { message: "Missing or invalid Authorization header." },
+        { status: 403 }
+      );
     }
 
     const idToken = authHeader.split("Bearer ")[1];
@@ -24,20 +28,26 @@ export async function POST(req: NextRequest) {
       decodedToken = await auth.verifyIdToken(idToken);
     } catch (err) {
       console.error("Error verifying ID token:", err);
-      return NextResponse.json({ message: "Invalid or expired token." }, { status: 403 });
+      return NextResponse.json(
+        { message: "Invalid or expired token." },
+        { status: 403 }
+      );
     }
+
     const uid = decodedToken.uid;
 
     const body = await req.json();
     const parsed = commentSchema.safeParse(body);
     if (!parsed.success) {
-      return NextResponse.json({ message: "Invalid request body.", errors: parsed.error.errors }, { status: 400 });
+      return NextResponse.json(
+        { message: "Invalid request body.", errors: parsed.error.errors },
+        { status: 400 }
+      );
     }
-    const { suggestionId, comment } = parsed.data;
 
+    const { suggestionId, comment } = parsed.data;
     const suggestionRef = db.collection("suggestions").doc(suggestionId);
 
-    // --- Add new comment to comments array ---
     await suggestionRef.update({
       comments: FieldValue.arrayUnion({
         text: comment,
@@ -50,6 +60,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ message: "Comment submitted successfully!" });
   } catch (error) {
     console.error("Error in comment-on-suggestion API:", error);
-    return NextResponse.json({ message: "Internal server error." }, { status: 500 });
+    return NextResponse.json(
+      { message: "Internal server error." },
+      { status: 500 }
+    );
   }
 }

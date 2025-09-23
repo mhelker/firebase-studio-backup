@@ -16,12 +16,12 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { StarRating } from "@/components/star-rating";
 import { useState } from "react";
-// import { useToast } from "@/hooks/use-toast"; // --- TEMPORARILY DISABLED
+import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/auth-context";
 import { Loader2, Info, AlertTriangle, Gift, DollarSign } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { loadStripe } from '@stripe/stripe-js';
-import { Elements, PaymentElement, useStripe, useElements } from '@stripe/react-stripe-js';
+import { loadStripe } from "@stripe/stripe-js";
+import { Elements, PaymentElement, useStripe, useElements } from "@stripe/react-stripe-js";
 import { Input } from "./ui/input";
 
 const reviewSchema = z.object({
@@ -37,6 +37,7 @@ type ReviewFormValues = z.infer<typeof reviewSchema>;
 
 interface ReviewFormProps {
   performerId: string;
+  performerName: string;
   bookingId: string;
   onReviewSubmitted: () => void;
 }
@@ -59,7 +60,7 @@ function InnerReviewForm({
   performerId: string;
 }) {
   const { user } = useAuth();
-  // const { toast } = useToast(); // --- TEMPORARILY DISABLED
+  const { toast } = useToast();
   const form = useFormContext<ReviewFormValues>();
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -67,40 +68,42 @@ function InnerReviewForm({
   const elements = useElements();
 
   const tipAmount = form.watch("tipAmount") || 0;
-  
   const shouldProceedToPayment = tipAmount > 0 && !isTippingReady;
 
   const handleFullSubmit = async (data: ReviewFormValues) => {
     if (!user) {
-      // toast({ title: "Not Authenticated", variant: "destructive" }); // --- TEMPORARILY DISABLED
-      console.error("Not Authenticated");
+      toast({ title: "Not Authenticated", variant: "destructive" });
       return;
     }
     setIsSubmitting(true);
 
+    // If tipping is enabled, finalize the Stripe payment first
     if (isTippingReady) {
       if (!stripe || !elements) {
-        // toast({ title: "Payment form not ready", variant: "destructive" }); // --- TEMPORARILY DISABLED
-        console.error("Payment form not ready");
+        toast({ title: "Payment form not ready", variant: "destructive" });
         setIsSubmitting(false);
         return;
       }
       const { error: paymentError } = await stripe.confirmPayment({
         elements,
-        redirect: 'if_required',
+        redirect: "if_required",
       });
       if (paymentError) {
-        // toast({ title: "Payment Error", description: paymentError.message || "An error occurred.", variant: "destructive" }); // --- TEMPORARILY DISABLED
-        console.error("Payment Error:", paymentError.message);
+        toast({
+          title: "Payment Error",
+          description: paymentError.message || "An error occurred.",
+          variant: "destructive",
+        });
         setIsSubmitting(false);
         return;
       }
     }
 
+    // Submit review + tip to your API
     try {
-      const response = await fetch('/api/submit-review', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      const response = await fetch("/api/submit-review", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           bookingId,
           performerId,
@@ -112,17 +115,16 @@ function InnerReviewForm({
       });
 
       const result = await response.json();
+      if (!response.ok) throw new Error(result.message || "Failed to submit review.");
 
-      if (!response.ok) {
-        throw new Error(result.message || 'Failed to submit review.');
-      }
-
-      // toast({ title: result.title, description: result.description }); // --- TEMPORARILY DISABLED
-      console.log("Review submitted:", result.title);
+      toast({ title: result.title || "Review submitted", description: result.description });
       onReviewSubmitted();
     } catch (error: any) {
-      // toast({ title: "Submission Error", description: error.message || "An error occurred.", variant: "destructive" }); // --- TEMPORARILY DISABLED
-      console.error("Submission Error:", error.message);
+      toast({
+        title: "Submission Error",
+        description: error.message || "An error occurred.",
+        variant: "destructive",
+      });
     } finally {
       setIsSubmitting(false);
     }
@@ -136,28 +138,36 @@ function InnerReviewForm({
         render={({ field }) => (
           <FormItem>
             <FormLabel>Your Rating</FormLabel>
-            <FormControl><StarRating rating={field.value} interactive onRate={field.onChange} size={28} /></FormControl>
+            <FormControl>
+              <StarRating rating={field.value} interactive onRate={field.onChange} size={28} />
+            </FormControl>
             <FormMessage />
           </FormItem>
         )}
       />
+
       <FormField
         control={form.control}
         name="comment"
         render={({ field }) => (
           <FormItem>
             <FormLabel>Your Comment</FormLabel>
-            <FormControl><Textarea placeholder="Tell us about your experience..." {...field} /></FormControl>
+            <FormControl>
+              <Textarea placeholder="Tell us about your experience..." {...field} />
+            </FormControl>
             <FormMessage />
           </FormItem>
         )}
       />
+
       <FormField
         control={form.control}
         name="tipAmount"
         render={({ field }) => (
           <FormItem>
-            <FormLabel className="flex items-center gap-2"><Gift className="w-4 h-4" /> Add a Tip? (Optional)</FormLabel>
+            <FormLabel className="flex items-center gap-2">
+              <Gift className="w-4 h-4" /> Add a Tip? (Optional)
+            </FormLabel>
             <FormControl>
               <div className="relative">
                 <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -175,11 +185,13 @@ function InnerReviewForm({
           </FormItem>
         )}
       />
-      
+
       {isTippingReady && (
         <div className="space-y-4">
           <FormLabel>Payment Details</FormLabel>
-          <div className="mt-2 p-4 border rounded-md bg-background"><PaymentElement /></div>
+          <div className="mt-2 p-4 border rounded-md bg-background">
+            <PaymentElement />
+          </div>
         </div>
       )}
 
@@ -189,15 +201,30 @@ function InnerReviewForm({
         disabled={isProceeding || isSubmitting || (isTippingReady && (!stripe || !elements))}
         className="w-full"
       >
-        {isProceeding ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Proceeding...</>
-          : isSubmitting ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Submitting...</>
-          : shouldProceedToPayment ? "Proceed to Payment" : "Submit Review"}
+        {isProceeding ? (
+          <>
+            <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Proceeding...
+          </>
+        ) : isSubmitting ? (
+          <>
+            <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Submitting...
+          </>
+        ) : shouldProceedToPayment ? (
+          "Proceed to Payment"
+        ) : (
+          "Submit Review"
+        )}
       </Button>
     </form>
   );
 }
 
-export function ReviewForm({ performerId, bookingId, onReviewSubmitted }: ReviewFormProps) {
+export function ReviewForm({
+  performerId,
+  performerName,
+  bookingId,
+  onReviewSubmitted,
+}: ReviewFormProps) {
   const [clientSecret, setClientSecret] = useState<string | null>(null);
   const [isDemoMode, setIsDemoMode] = useState(false);
   const [isLoadingSecret, setIsLoadingSecret] = useState(false);
@@ -211,33 +238,22 @@ export function ReviewForm({ performerId, bookingId, onReviewSubmitted }: Review
   const isTippingReady = !!clientSecret && !isDemoMode;
 
   const handleProceedToPayment = async () => {
-    const tipValue = form.getValues("tipAmount");
-    const tipAmount = parseFloat(tipValue as any || '0');
-    if (isNaN(tipAmount) || tipAmount < 0.50) {
-      if (tipAmount > 0) {
-        setError("Tip amount must be at least $0.50.");
-      }
+    const tipAmount = Number(form.getValues("tipAmount") || 0);
+    if (isNaN(tipAmount) || tipAmount < 0.5) {
+      if (tipAmount > 0) setError("Tip amount must be at least $0.50.");
       return;
     }
 
     setIsLoadingSecret(true);
     setError(null);
     try {
-      // Point to the correct, existing API route (/api/createTipIntent)
-      const response = await fetch('/api/createTipIntent', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        // Send 'amount' to match what the API route expects
-        body: JSON.stringify({ amount: tipAmount }),
+      const response = await fetch("/api/create-payment-intent", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ amount: tipAmount, bookingId: `${bookingId}-tip` }),
       });
-
       const intent = await response.json();
-      
-      if (!response.ok) {
-        throw new Error(intent.error || "Failed to create tip intent.");
-      }
-
-      // Handle the correct clientSecret from the existing API
+      if (!response.ok) throw new Error(intent.error || "Failed to create tip intent.");
       if (intent.clientSecret) {
         setIsDemoMode(false);
         setClientSecret(intent.clientSecret);
@@ -257,11 +273,23 @@ export function ReviewForm({ performerId, bookingId, onReviewSubmitted }: Review
   return (
     <FormProvider {...form}>
       <div className="space-y-4 mb-6">
-        {isDemoMode && <Alert variant="destructive"><AlertTriangle className="h-4 w-4" /><AlertTitle>Stripe Demo Mode</AlertTitle><AlertDescription>Tipping is disabled.</AlertDescription></Alert>}
-        {error && <Alert variant="destructive"><AlertTriangle className="h-4 w-4" /><AlertTitle>Payment Error</AlertTitle><AlertDescription>{error}</AlertDescription></Alert>}
+        {isDemoMode && (
+          <Alert variant="destructive">
+            <AlertTriangle className="h-4 w-4" />
+            <AlertTitle>Stripe Demo Mode</AlertTitle>
+            <AlertDescription>Tipping is disabled.</AlertDescription>
+          </Alert>
+        )}
+        {error && (
+          <Alert variant="destructive">
+            <AlertTriangle className="h-4 w-4" />
+            <AlertTitle>Payment Error</AlertTitle>
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
+        )}
       </div>
 
-      <Elements stripe={stripePromise} options={elementOptions} key={clientSecret || 'no-tip'}>
+      <Elements stripe={stripePromise} options={elementOptions} key={clientSecret || "no-tip"}>
         <InnerReviewForm
           onReviewSubmitted={onReviewSubmitted}
           isTippingReady={isTippingReady}
@@ -275,7 +303,9 @@ export function ReviewForm({ performerId, bookingId, onReviewSubmitted }: Review
       <Alert className="mt-6">
         <Info className="h-4 w-4" />
         <AlertTitle>How Reviews Work</AlertTitle>
-        <AlertDescription>Your review is hidden until the performer also reviews you, or after 14 days.</AlertDescription>
+        <AlertDescription>
+          Your review is hidden until {performerName} also reviews you, or after 14 days.
+        </AlertDescription>
       </Alert>
     </FormProvider>
   );
