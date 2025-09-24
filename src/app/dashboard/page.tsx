@@ -555,22 +555,12 @@ past.sort((a, b) => {
                             <CardContent className="text-sm space-y-1">
                                 <p>
   <strong>Date:</strong>{" "}
-  {booking.date
-    ? (() => {
-        try {
-          const [startHour, startMin] = booking.startTime?.split(":").map(Number) ?? [0,0];
-          const startDate = new Date(booking.date.toDate());
-          startDate.setHours(startHour, startMin);
-
-          const [endHour, endMin] = booking.finishTime?.split(":").map(Number) ?? [0,0];
-          const endDate = new Date(booking.date.toDate());
-          endDate.setHours(endHour, endMin);
-
-          return `${format(startDate, "PPP")} from ${format(startDate, "h:mm a")} to ${format(endDate, "h:mm a")}`;
-        } catch {
-          return "Invalid time format";
-        }
-      })()
+  {booking.date ? format(booking.date.toDate(), "PPP") : "N/A"}
+</p>
+<p>
+  <strong>Time:</strong>{" "}
+  {booking.startTime && booking.finishTime
+    ? `${booking.startTime} to ${booking.finishTime}`
     : "N/A"}
 </p>
                                 <p><strong>Location:</strong> {booking.location}</p>
