@@ -1,5 +1,6 @@
 "use client";
 
+import { format, parse } from "date-fns";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
@@ -7,7 +8,6 @@ import { Check, X, Calendar, Clock, History, Loader2, UserX, PackageOpen, Dollar
 import { useEffect, useState } from "react";
 import { collection, query, orderBy, getDocs, doc, updateDoc, where, getDoc, serverTimestamp } from "firebase/firestore";
 import { db } from "@/lib/firebase";
-import { format } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/auth-context";
 import type { Booking, Performer } from "@/types";
@@ -158,34 +158,52 @@ export default function DashboardPage() {
   };
 
   const getCategorizedBookings = () => {
-    const pending: Booking[] = [];
-    const upcoming: Booking[] = [];
-    const past: Booking[] = [];
-    const now = new Date();
+  const pending: Booking[] = [];
+  const upcoming: Booking[] = [];
+  const past: Booking[] = [];
+  const now = new Date();
 
-    bookings.forEach(booking => {
-      const isPastDate = booking.date ? booking.date.toDate() < now : false;
-      const status = booking.status || 'pending'; // Default to pending if status is missing
+  bookings.forEach(booking => {
+    const isPastDate = booking.date ? booking.date.toDate() < now : false;
+    const status = booking.status || 'pending';
 
-      // --- THIS IS THE CORRECTED LOGIC ---
-      if (status === 'completed' || status === 'cancelled') {
-        past.push(booking);
-      } else if (isPastDate && status === 'confirmed') {
-        // Automatically consider past, confirmed bookings as completed for review purposes
-        past.push({ ...booking, status: 'completed' });
-      } else if (status === 'pending') {
-        pending.push(booking);
-      } else { 
-        // This will now correctly handle 'confirmed' bookings for future dates
-        upcoming.push(booking);
-      }
-    });
-    
-    pending.sort((a,b) => (a.date?.toMillis() || 0) - (b.date?.toMillis() || 0));
-    upcoming.sort((a,b) => (a.date?.toMillis() || 0) - (b.date?.toMillis() || 0));
+    // Skip weird 12:00AM bookings
+    const isMidnightBooking = booking.startTime === "00:00" && booking.finishTime === "00:00";
 
-    return { pending, upcoming, past };
-  };
+    if ((status === 'completed' || status === 'cancelled') && !isMidnightBooking) {
+      past.push(booking);
+    } else if (isPastDate && status === 'confirmed' && !isMidnightBooking) {
+      past.push({ ...booking, status: 'completed' });
+    } else if (status === 'pending') {
+      pending.push(booking);
+    } else {
+      upcoming.push(booking);
+    }
+  });
+
+  // Sort pending & upcoming by date (earliest first)
+  pending.sort((a, b) => (a.date?.toMillis() || 0) - (b.date?.toMillis() || 0));
+  upcoming.sort((a, b) => (a.date?.toMillis() || 0) - (b.date?.toMillis() || 0));
+
+  // Sort past bookings by start time (latest first)
+past.sort((a, b) => {
+  const dateA = a.date?.toDate() || new Date();
+  const dateB = b.date?.toDate() || new Date();
+  const [aHour, aMin] = a.startTime?.split(":").map(Number) ?? [0, 0];
+  const [bHour, bMin] = b.startTime?.split(":").map(Number) ?? [0, 0];
+
+  const aTime = new Date(dateA);
+  aTime.setHours(aHour, aMin);
+
+  const bTime = new Date(dateB);
+  bTime.setHours(bHour, bMin);
+
+  // NOTE: reverse order for latest first
+  return bTime.getTime() - aTime.getTime();
+});
+
+  return { pending, upcoming, past };
+};
 
   const { pending, upcoming, past } = getCategorizedBookings();
   
@@ -300,7 +318,28 @@ export default function DashboardPage() {
               {pending.map(booking => (
                 <Card key={booking.id} className="bg-secondary/20">
                     <CardHeader>
-                        <CardTitle className="text-lg font-headline">Request for {booking.date ? format(booking.date.toDate(), "PPP") : 'N/A'} at {booking.time}</CardTitle>
+                        <CardTitle className="text-lg font-headline">
+  Request for {booking.date ? format(booking.date.toDate(), "PPP") : 'N/A'}{" "}
+  {booking.startTime && booking.finishTime
+  ? (() => {
+      try {
+        // Combine date + startTime
+        const [startHour, startMin] = booking.startTime.split(":").map(Number);
+        const startDate = new Date(booking.date.toDate());
+        startDate.setHours(startHour, startMin);
+
+        // Combine date + finishTime
+        const [endHour, endMin] = booking.finishTime.split(":").map(Number);
+        const endDate = new Date(booking.date.toDate());
+        endDate.setHours(endHour, endMin);
+
+        return `from ${format(startDate, "h:mm a")} to ${format(endDate, "h:mm a")}`;
+      } catch {
+        return "Invalid time format";
+      }
+    })()
+  : "Time not set"}
+</CardTitle>
                         <CardDescription>Location: {booking.location}</CardDescription>
                          {booking.isVirtual && (
                             <Badge variant="outline" className="w-fit mt-1 bg-background">
@@ -378,7 +417,29 @@ export default function DashboardPage() {
               {upcoming.map(booking => (
                 <Card key={booking.id}>
                     <CardHeader>
-                        <CardTitle className="text-lg font-headline">{booking.date ? format(booking.date.toDate(), "PPP") : 'N/A'} at {booking.time}</CardTitle>
+                        <CardTitle className="text-lg font-headline">
+  {booking.date ? format(booking.date.toDate(), "PPP") : 'N/A'}{" "}
+  {booking.startTime && booking.finishTime
+  ? (() => {
+      try {
+        // Combine date + startTime
+        const [startHour, startMin] = booking.startTime.split(":").map(Number);
+        const startDate = new Date(booking.date.toDate());
+        startDate.setHours(startHour, startMin);
+
+        // Combine date + finishTime
+        const [endHour, endMin] = booking.finishTime.split(":").map(Number);
+        const endDate = new Date(booking.date.toDate());
+        endDate.setHours(endHour, endMin);
+
+        return `from ${format(startDate, "h:mm a")} to ${format(endDate, "h:mm a")}`;
+      } catch {
+        return "Invalid time format";
+      }
+    })()
+  : "Time not set"}
+</CardTitle>
+
                         <CardDescription>Location: {booking.location}</CardDescription>
                          {booking.isVirtual && (
                             <Badge variant="outline" className="w-fit mt-1 bg-background">
@@ -479,7 +540,7 @@ export default function DashboardPage() {
                     return (
                         <Card key={booking.id} className="bg-card/80 opacity-80">
                             <CardHeader className="pb-2">
-                                <CardTitle className="text-lg font-headline">Booking for {booking.date ? format(booking.date.toDate(), "PPP") : 'N/A'}</CardTitle>
+                                <CardTitle className="text-lg font-headline">Booking for {booking.date ? format(booking.date.toDate(), "PPP") : 'N/A'}{booking.time && ` at ${booking.time}`}</CardTitle>
                                 <CardDescription className="text-xs">
                                     Status: 
                                     <span className={`font-semibold capitalize ml-1 ${
@@ -492,7 +553,26 @@ export default function DashboardPage() {
                                 </CardDescription>
                             </CardHeader>
                             <CardContent className="text-sm space-y-1">
-                                <p><strong>Date:</strong> {booking.date ? format(booking.date.toDate(), "PPP") : 'N/A'} at {booking.time}</p>
+                                <p>
+  <strong>Date:</strong>{" "}
+  {booking.date
+    ? (() => {
+        try {
+          const [startHour, startMin] = booking.startTime?.split(":").map(Number) ?? [0,0];
+          const startDate = new Date(booking.date.toDate());
+          startDate.setHours(startHour, startMin);
+
+          const [endHour, endMin] = booking.finishTime?.split(":").map(Number) ?? [0,0];
+          const endDate = new Date(booking.date.toDate());
+          endDate.setHours(endHour, endMin);
+
+          return `${format(startDate, "PPP")} from ${format(startDate, "h:mm a")} to ${format(endDate, "h:mm a")}`;
+        } catch {
+          return "Invalid time format";
+        }
+      })()
+    : "N/A"}
+</p>
                                 <p><strong>Location:</strong> {booking.location}</p>
                                 {booking.isVirtual && (
                                     <Badge variant="outline" className="w-fit mt-1 bg-background text-xs">
