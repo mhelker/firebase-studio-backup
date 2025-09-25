@@ -44,6 +44,19 @@ const stripePromise = loadStripe(
   process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY || ""
 );
 
+// ✅ Helper to convert Firestore date + "HH:mm" into 12-hour time
+function formatBookingTime(dateObj: any, timeStr?: string) {
+  if (!dateObj || !timeStr) return "N/A";
+  try {
+    const [h, m] = timeStr.split(":").map(Number);
+    const d = new Date(dateObj.toDate());
+    d.setHours(h, m);
+    return format(d, "h:mm a"); // e.g. 1:05 PM
+  } catch {
+    return "Invalid time";
+  }
+}
+
 export default function BookingsPage() {
   const { user, loading: authLoading } = useAuth();
   const [bookings, setBookings] = useState<Booking[]>([]);
@@ -262,8 +275,7 @@ export default function BookingsPage() {
                         : "N/A"}
                     </p>
                     <p>
-                      <strong>Time:</strong> {booking.startTime} -{" "}
-                      {booking.finishTime}
+                      <strong>Time:</strong> {formatBookingTime(booking.date, booking.startTime)} - {formatBookingTime(booking.date, booking.finishTime)}
                     </p>
                     <p>
                       <strong>Location:</strong> {booking.location}
@@ -354,8 +366,7 @@ export default function BookingsPage() {
                         : "N/A"}
                     </p>
                     <p>
-                      <strong>Time:</strong> {booking.startTime} -{" "}
-                      {booking.finishTime}
+                      <strong>Time:</strong> {formatBookingTime(booking.date, booking.startTime)} - {formatBookingTime(booking.date, booking.finishTime)}
                     </p>
                     <p>
                       <strong>Price:</strong> ${booking.pricePerHour.toFixed(2)}

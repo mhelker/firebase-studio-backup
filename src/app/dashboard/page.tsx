@@ -1,6 +1,16 @@
 "use client";
 
 import { format, parse } from "date-fns";
+
+// Format Firestore date + "HH:mm" to 12-hour AM/PM
+function formatBookingTime(date: any, time?: string) {
+  if (!date || !time) return "N/A";
+  const [h, m] = time.split(":").map(Number);
+  const d = new Date(date.toDate());
+  d.setHours(h, m);
+  return format(d, "h:mm a");
+}
+
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
@@ -560,7 +570,7 @@ past.sort((a, b) => {
 <p>
   <strong>Time:</strong>{" "}
   {booking.startTime && booking.finishTime
-    ? `${booking.startTime} to ${booking.finishTime}`
+    ? `${formatBookingTime(booking.date, booking.startTime)} to ${formatBookingTime(booking.date, booking.finishTime)}`
     : "N/A"}
 </p>
                                 <p><strong>Location:</strong> {booking.location}</p>
