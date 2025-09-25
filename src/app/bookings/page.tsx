@@ -369,8 +369,11 @@ export default function BookingsPage() {
                       <strong>Time:</strong> {formatBookingTime(booking.date, booking.startTime)} - {formatBookingTime(booking.date, booking.finishTime)}
                     </p>
                     <p>
-                      <strong>Price:</strong> ${booking.pricePerHour.toFixed(2)}
+                      <strong>Location:</strong> {booking.location}
                     </p>
+                    <p>
+                      <strong>Price:</strong> ${booking.pricePerHour.toFixed(2)}
+                    </p>    
                     {booking.tipAmount && booking.tipAmount > 0 && (
                       <p className="font-semibold">
                         <strong>Tip Paid:</strong> $
