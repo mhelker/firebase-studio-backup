@@ -57,6 +57,23 @@ function formatBookingTime(dateObj: any, timeStr?: string) {
   }
 }
 
+// ✅ Helper to get a full Date object for sorting, including time
+function getBookingDateTime(booking: Booking, timeField: 'startTime' | 'finishTime'): Date | null {
+    if (!booking.date?.toDate) return null;
+    const d = new Date(booking.date.toDate());
+    const timeStr = booking[timeField];
+    if (timeStr) {
+        const [h, m] = timeStr.split(':').map(Number);
+        if (!isNaN(h) && !isNaN(m)) {
+            d.setHours(h, m, 0, 0);
+            return d;
+        }
+    }
+    // If no time, just return the date at midnight
+    return d;
+}
+
+
 export default function BookingsPage() {
   const { user, loading: authLoading } = useAuth();
   const [bookings, setBookings] = useState<Booking[]>([]);
@@ -118,36 +135,32 @@ export default function BookingsPage() {
     }
   }, [user, authLoading, fetchBookings]);
 
-  // ✅ UPDATED: decide past/upcoming by finish time, not just status
   const getCategorizedBookings = () => {
-    const now = new Date();
     const upcoming: Booking[] = [];
     const past: Booking[] = [];
 
     bookings.forEach((booking) => {
-      const finish = booking.date?.toDate
-        ? (() => {
-            const d = new Date(booking.date.toDate());
-            if (booking.finishTime) {
-              const [h, m] = booking.finishTime.split(":").map(Number);
-              d.setHours(h, m || 0, 0, 0);
-            }
-            return d;
-          })()
-        : null;
-
-      if (finish && finish < now) {
+      // A booking is "past" only if it's completed or cancelled.
+      if (booking.status === 'completed' || booking.status === 'cancelled') {
         past.push(booking);
       } else {
+        // All other statuses are considered upcoming or pending action.
         upcoming.push(booking);
       }
     });
 
     // upcoming earliest→latest, past newest→oldest
-    upcoming.sort(
-      (a, b) => (a.date?.toMillis() || 0) - (b.date?.toMillis() || 0)
-    );
-    past.sort((a, b) => (b.date?.toMillis() || 0) - (a.date?.toMillis() || 0));
+    upcoming.sort((a, b) => {
+        const dateA = getBookingDateTime(a, 'startTime')?.getTime() || 0;
+        const dateB = getBookingDateTime(b, 'startTime')?.getTime() || 0;
+        return dateA - dateB;
+    });
+    
+    past.sort((a, b) => {
+        const dateA = getBookingDateTime(a, 'finishTime')?.getTime() || 0;
+        const dateB = getBookingDateTime(b, 'finishTime')?.getTime() || 0;
+        return dateB - dateA;
+    });
 
     return { upcoming, past };
   };
@@ -160,17 +173,8 @@ export default function BookingsPage() {
   };
 
   const canReview = (booking: Booking): boolean => {
-    if (booking.status !== "completed" || booking.customerReviewSubmitted) {
-      return false;
-    }
-
-    if (booking.date && booking.finishTime) {
-      const [hours, minutes] = booking.finishTime.split(":").map(Number);
-      const finishDateTime = new Date(booking.date.toDate());
-      finishDateTime.setHours(hours, minutes);
-      return new Date() > finishDateTime;
-    }
-    return false;
+    // Only allow review if the booking is completed and not already reviewed.
+    return booking.status === "completed" && !booking.customerReviewSubmitted;
   };
 
   if (authLoading) {

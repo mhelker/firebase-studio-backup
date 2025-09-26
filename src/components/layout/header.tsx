@@ -55,12 +55,12 @@ export function Header() {
                 <Button 
                   variant="ghost" 
                   className={cn(
-                    "relative h-10 w-10 rounded-full ml-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
+                    "relative h-16 w-16 rounded-full ml-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
                     isUserPageActive && "ring-2 ring-ring ring-offset-2 ring-offset-background"
                   )} 
                   suppressHydrationWarning
                 >
-                  <Avatar className="h-9 w-9">
+                  <Avatar className="h-14 w-14">
                     <AvatarImage src={imageUrl || ''} alt="User avatar" data-ai-hint="person portrait" />
                     <AvatarFallback>{userInitial}</AvatarFallback>
                   </Avatar>
