@@ -191,9 +191,40 @@ export default function DashboardPage() {
     }
   });
 
-  // Sort pending & upcoming by date (earliest first)
-  pending.sort((a, b) => (a.date?.toMillis() || 0) - (b.date?.toMillis() || 0));
-  upcoming.sort((a, b) => (a.date?.toMillis() || 0) - (b.date?.toMillis() || 0));
+  // --- Correct sorting: earliest start time FIRST (like your past sort) ---
+pending.sort((a, b) => {
+  const dateA = a.date?.toDate() || new Date();
+  const dateB = b.date?.toDate() || new Date();
+
+  const [aHour, aMin] = a.startTime?.split(":").map(Number) ?? [0, 0];
+  const [bHour, bMin] = b.startTime?.split(":").map(Number) ?? [0, 0];
+
+  const aTime = new Date(dateA);
+  aTime.setHours(aHour, aMin);
+
+  const bTime = new Date(dateB);
+  bTime.setHours(bHour, bMin);
+
+  // Earliest first
+  return aTime.getTime() - bTime.getTime();
+});
+
+upcoming.sort((a, b) => {
+  const dateA = a.date?.toDate() || new Date();
+  const dateB = b.date?.toDate() || new Date();
+
+  const [aHour, aMin] = a.startTime?.split(":").map(Number) ?? [0, 0];
+  const [bHour, bMin] = b.startTime?.split(":").map(Number) ?? [0, 0];
+
+  const aTime = new Date(dateA);
+  aTime.setHours(aHour, aMin);
+
+  const bTime = new Date(dateB);
+  bTime.setHours(bHour, bMin);
+
+  // Earliest first
+  return aTime.getTime() - bTime.getTime();
+});
 
   // Sort past bookings by start time (latest first)
 past.sort((a, b) => {
