@@ -6,12 +6,18 @@ import { getFirestore, runTransaction, enableIndexedDbPersistence, type Firestor
 import { getAuth, type Auth } from 'firebase/auth';
 import { getStorage, type FirebaseStorage } from 'firebase/storage';
 
-// Firebase config sourced exclusively from environment variables
+// Conditionally determine the storage bucket based on the environment
+const storageBucket =
+  process.env.NODE_ENV === 'production'
+    ? process.env.NEXT_PUBLIC_STORAGE_BUCKET
+    : 'talenthop.firebasestorage.app';
+
+// Firebase config sourced from environment variables
 export const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_API_KEY,
   authDomain: process.env.NEXT_PUBLIC_AUTH_DOMAIN,
   projectId: process.env.NEXT_PUBLIC_PROJECT_ID,
-  storageBucket: process.env.NEXT_PUBLIC_STORAGE_BUCKET,
+  storageBucket: storageBucket,
   messagingSenderId: process.env.NEXT_PUBLIC_MESSAGING_SENDER_ID,
   appId: process.env.NEXT_PUBLIC_APP_ID,
 };
