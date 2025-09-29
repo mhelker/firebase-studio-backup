@@ -34,6 +34,7 @@ type ReviewFormValues = z.infer<typeof reviewSchema>;
 interface Props {
   bookingId: string;
   customerId: string;
+  performerId: string; // ADD THIS LINE
   onReviewSubmitted: () => void;
 }
 
@@ -72,12 +73,12 @@ export function CustomerReviewForm({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          bookingId,
-          customerId,
-          rating: data.rating,
-          comment: data.comment,
-          userId: user.uid, // This is the performer's ID
-        }),
+  bookingId,
+  customerId,
+  performerId, // ADD THIS
+  rating: data.rating,
+  comment: data.comment,
+}),
       });
 
       const result = await response.json();
@@ -141,7 +142,7 @@ export function CustomerReviewForm({
         />
         <Button type="submit" disabled={isSubmitting} className="w-full">
           {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-          Submit Review
+          Submit Review & Complete Gig
         </Button>
       </form>
     </Form>

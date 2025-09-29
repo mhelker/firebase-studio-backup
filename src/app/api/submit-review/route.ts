@@ -1,13 +1,12 @@
 // src/app/api/submit-review/route.ts
-
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 
 // Lazily import firebase-admin
 async function getAdminFirestore() {
   if (!process.env.FIREBASE_SERVICE_ACCOUNT) return null;
-  const { db, FieldValue, Timestamp } = await import('@/lib/firebase-admin-lazy');
-  return { db, FieldValue, Timestamp };
+  const { getFirebaseAdminFirestore, FieldValue, Timestamp } = await import('@/lib/firebase-admin-lazy');
+  return { db: getFirebaseAdminFirestore(), FieldValue, Timestamp };
 }
 
 function validateFirestoreId(id: string, label: string) {
@@ -22,7 +21,7 @@ const SubmitReviewAndTipInputSchema = z.object({
   rating: z.number().min(1).max(5),
   comment: z.string().min(10).max(500),
   tipAmount: z.number().min(0),
-  userId: z.string(),
+  customerId: z.string(), // ✅ changed from userId
 });
 
 export async function POST(req: NextRequest) {
@@ -33,15 +32,15 @@ export async function POST(req: NextRequest) {
 
     const body = await req.json();
     const input = SubmitReviewAndTipInputSchema.parse(body);
-    const { bookingId, performerId, rating, comment, tipAmount, userId } = input;
+    const { bookingId, performerId, rating, comment, tipAmount, customerId } = input;
 
     validateFirestoreId(bookingId, 'bookingId');
     validateFirestoreId(performerId, 'performerId');
-    validateFirestoreId(userId, 'userId');
+    validateFirestoreId(customerId, 'customerId');
 
     await firestore.runTransaction(async (transaction) => {
       const bookingDocRef = firestore.collection('bookings').doc(bookingId);
-      const customerDocRef = firestore.collection('customers').doc(userId);
+      const customerDocRef = firestore.collection('customers').doc(customerId);
 
       const [bookingSnap, customerSnap] = await Promise.all([
         transaction.get(bookingDocRef),
@@ -56,7 +55,7 @@ export async function POST(req: NextRequest) {
       transaction.set(privateReviewRef, {
         bookingId,
         performerId,
-        userId,
+        customerId, // ✅ changed
         rating,
         comment,
         userName: customerSnap.data()!.displayName || 'Anonymous',
@@ -71,12 +70,12 @@ export async function POST(req: NextRequest) {
         customerComment: comment,
         customerName: customerSnap.data()!.displayName || 'Anonymous',
         customerImageUrl: customerSnap.data()!.imageUrl || '',
+        status: "completed",
+        completedAt: bookingData.completedAt || FieldValue.serverTimestamp(),
       };
 
-      if (tipAmount > 0) bookingUpdateData.tipAmount = tipAmount;
-
-      if (!bookingData.completedAt) {
-        bookingUpdateData.completedAt = FieldValue.serverTimestamp();
+      if (tipAmount > 0) {
+        bookingUpdateData.tipAmount = tipAmount;
       }
 
       const completionTime = (bookingData.completedAt || Timestamp.now()) as FirebaseFirestore.Timestamp;
@@ -85,7 +84,6 @@ export async function POST(req: NextRequest) {
         completionTime.nanoseconds
       );
 
-      // Only set publicReviewsCreated to false if performer hasn't submitted their review yet
       if (!bookingData.performerReviewSubmitted) {
         bookingUpdateData.publicReviewsCreated = false;
       }
@@ -99,6 +97,9 @@ export async function POST(req: NextRequest) {
     });
   } catch (error: any) {
     console.error("Error in submit-review API route:", error);
-    return NextResponse.json({ message: error.message || "An internal server error occurred." }, { status: 500 });
+    return NextResponse.json(
+      { message: error.message || "An internal server error occurred." },
+      { status: 500 }
+    );
   }
 }

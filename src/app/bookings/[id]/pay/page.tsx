@@ -131,7 +131,7 @@ export default function PayForBookingPage() {
           ...bookingSnap.data(),
         } as Booking;
 
-        if (bookingData.userId !== uid) {
+        if (bookingData.customerId !== uid) {
           setError("You do not have permission to view this page.");
           return;
         }

@@ -45,14 +45,14 @@ async function publishReviewsForBooking(
       .doc(publicRef.id);
     const customerRef = db
       .collection("customers")
-      .doc(bookingData.userId)
+      .doc(bookingData.customerId)
       .collection("reviews")
       .doc(publicRef.id);
 
     const reviewData = {
       bookingId,
       performerId: bookingData.performerId,
-      customerId: bookingData.userId,
+      customerId: bookingData.customerId,
       rating: bookingData.customerRating,
       comment: bookingData.customerComment,
       author: "customer",
@@ -76,14 +76,14 @@ async function publishReviewsForBooking(
       .doc(publicRef.id);
     const customerRef = db
       .collection("customers")
-      .doc(bookingData.userId)
+      .doc(bookingData.customerId)
       .collection("reviews")
       .doc(publicRef.id);
 
     const reviewData = {
       bookingId,
       performerId: bookingData.performerId,
-      customerId: bookingData.userId,
+      customerId: bookingData.customerId,
       rating: bookingData.performerRatingOfCustomer,
       comment: bookingData.performerCommentOnCustomer,
       author: "performer",

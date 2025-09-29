@@ -109,7 +109,7 @@ function InnerReviewForm({
           performerId,
           rating: data.rating,
           comment: data.comment,
-          userId: user.uid,
+          customerId: user.uid,
           tipAmount: data.tipAmount || 0,
         }),
       });

@@ -116,22 +116,27 @@ export function BookingForm({ performerId, performerName, pricePerHour }: Bookin
       const platformFee = totalPrice * PLATFORM_COMMISSION_RATE;
       const performerPayout = totalPrice - platformFee;
 
-      const bookingData = {
-        ...data,
-        date: Timestamp.fromDate(data.date),
-        performerId,
-        performerName,
-        pricePerHour: totalPrice,
-        platformFee,
-        performerPayout,
-        status: "pending",
-        createdAt: serverTimestamp(),
-        userId: user.uid,
-        customerName: user.email?.split("@")[0] || "Anonymous",
-        customerImageUrl: "",
-        customerReviewSubmitted: false,
-        performerReviewSubmitted: false,
-      };
+      const customerData = customerSnap.exists() ? customerSnap.data() : {
+  displayName: user.email?.split("@")[0] || "Anonymous",
+  imageUrl: "",
+};
+
+const bookingData = {
+  ...data,
+  date: Timestamp.fromDate(data.date),
+  performerId,
+  performerName,
+  pricePerHour: totalPrice,
+  platformFee,
+  performerPayout,
+  status: "pending",
+  createdAt: serverTimestamp(),
+  customerId: user.uid,               // changed
+  customerName: customerData.displayName,
+  customerImageUrl: customerData.imageUrl,
+  customerReviewSubmitted: false,
+  performerReviewSubmitted: false,
+};
 
       await addDoc(collection(db, "bookings"), bookingData);
 
