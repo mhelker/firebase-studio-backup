@@ -11,10 +11,12 @@ service cloud.firestore {
       return request.auth.uid == userId;
     }
 
+    /* REMOVE THIS BLOCK IF YOU ARE NOT USING IT
     function isAdmin() {
       // Optional: you can leave empty for dev
       return false;
     }
+    */
 
     // ==========================================
     //              Performers
@@ -48,7 +50,21 @@ service cloud.firestore {
     //              Bookings
     // ==========================================
     match /bookings/{bookingId} {
-      allow read, create, update: if isSignedIn();
+      // Allow read only to the customer who owns it or the performer assigned
+      allow read: if isSignedIn() && (isOwner(resource.data.customerId) || isOwner(resource.data.performerId));
+
+      // Allow create only if signed in (usually a customer)
+      allow create: if isSignedIn();
+
+      // Allow update only for the owner of the document (customer or performer) depending on fields
+      allow update: if isSignedIn() && (
+        // Customer can set status to 'confirmed'
+        (isOwner(resource.data.customerId) && request.resource.data.keys().hasAny(['status']) && request.resource.data.status == 'confirmed')
+        ||
+        // Performer can mark completed or update meetingLink
+        (isOwner(resource.data.performerId) && request.resource.data.keys().hasAny(['status', 'performerCompleted', 'meetingLink']))
+      );
+
       allow delete: if false;
     }
 
@@ -69,16 +85,15 @@ service cloud.firestore {
       allow create: if isSignedIn();
       allow update: if isSignedIn();
       allow delete: if false;
-    }
 
-    // ==========================================
-    //              Comments
-    // ==========================================
-    match /comments/{commentId} {
-      allow read: if true;
-      allow create: if isSignedIn();  // This is what fixes your local submit comment error
-      allow update: if isSignedIn();
-      allow delete: if false;
+      // ==========================================
+      //              Comments subcollection
+      // ==========================================
+      match /comments/{commentId} {
+        allow read: if true;           // Anyone can see comments
+        allow create: if isSignedIn(); // Local dev can add comments
+        allow update, delete: if false;
+      }
     }
 
     // ==========================================
