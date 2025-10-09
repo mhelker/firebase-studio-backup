@@ -6,7 +6,7 @@ import {
   CardHeader,
   CardTitle,
   CardDescription,
-  CardFooter,
+  CardFooter
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
@@ -17,7 +17,7 @@ import {
   PackageOpen,
   UserX,
   CreditCard,
-  Star,
+  Star
 } from "lucide-react";
 import { useEffect, useState, useCallback } from "react";
 import {
@@ -26,7 +26,7 @@ import {
   getDocs,
   where,
   doc,
-  updateDoc,
+  updateDoc
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { format } from "date-fns";
@@ -38,7 +38,7 @@ import {
   DialogContent,
   DialogDescription,
   DialogHeader,
-  DialogTitle,
+  DialogTitle
 } from "@/components/ui/dialog";
 import { ReviewForm as ReviewAndTipForm } from "@/components/review-and-tip-form";
 import { useRouter } from "next/navigation";
@@ -89,7 +89,6 @@ export default function BookingsPage() {
     try {
       const q = query(collection(db, "bookings"), where("customerId", "==", user.uid));
       const snap = await getDocs(q);
-
       const userBookings = snap.docs.map(
         (d) => ({ id: d.id, ...d.data() } as Booking)
       );
@@ -98,7 +97,6 @@ export default function BookingsPage() {
       userBookings.sort(
         (a, b) => (b.createdAt?.toMillis() || 0) - (a.createdAt?.toMillis() || 0)
       );
-
       setBookings(userBookings);
     } catch (err: any) {
       console.error("Error fetching bookings:", err);
@@ -116,10 +114,8 @@ export default function BookingsPage() {
 
   useEffect(() => {
     let previousBookingsJSON: string | null = null;
-
     const interval = setInterval(async () => {
       if (!user) return;
-
       try {
         const q = query(collection(db, "bookings"), where("customerId", "==", user.uid));
         const snap = await getDocs(q);
@@ -129,7 +125,6 @@ export default function BookingsPage() {
         fetchedBookings.sort((a, b) => (b.createdAt?.toMillis() || 0) - (a.createdAt?.toMillis() || 0));
 
         const currentBookingsJSON = JSON.stringify(fetchedBookings);
-
         // Only update state if bookings have actually changed
         if (currentBookingsJSON !== previousBookingsJSON) {
           previousBookingsJSON = currentBookingsJSON;
@@ -143,6 +138,7 @@ export default function BookingsPage() {
     return () => clearInterval(interval);
   }, [user]);
 
+
   // 2️⃣ Initial fetch when auth/user loads
   useEffect(() => {
     if (!authLoading && user) fetchBookings();
@@ -153,7 +149,7 @@ export default function BookingsPage() {
     if (!confirm("Are you sure you want to cancel this booking?")) return;
     await updateDoc(doc(db, "bookings", bookingId), {
       status: "cancelled",
-      cancelledAt: new Date(),
+      cancelledAt: new Date()
     });
     fetchBookings();
   };
@@ -163,55 +159,72 @@ export default function BookingsPage() {
     fetchBookings();
   };
 
-  const canReview = (b: Booking) =>
-    b.status === "confirmed" && !b.customerReviewSubmitted;
+  const canReview = (b: Booking) => b.status === "confirmed" && !b.customerReviewedPerformer;
 
-  const categorizeBookings = () => {
-    const pendingRequests: Booking[] = [];
-    const upcomingGigs: Booking[] = [];
-    const pendingCompletion: Booking[] = [];
-    const past: Booking[] = [];
-    const now = new Date();
+   const categorizeBookings = () => {
+  const pendingRequests: Booking[] = [];
+  const upcomingGigs: Booking[] = [];
+  const pendingCompletion: Booking[] = [];
+  const past: Booking[] = [];
+  const now = new Date();
 
-    bookings.forEach((b) => {
-      const startTime = getBookingDateTime(b, "startTime");
-      const finishTime = getBookingDateTime(b, "finishTime");
+  bookings.forEach((b) => {
+    const startTime = getBookingDateTime(b, "startTime");
+    const finishTime = getBookingDateTime(b, "finishTime");
 
-      if (b.status === "cancelled" || b.status === "completed") {
-        past.push(b);
-      } else if (b.status === "pending" || b.status === "new") {
-        pendingRequests.push(b);
-      } else if (b.status === "confirmed") {
-        if (finishTime && finishTime <= now) pendingCompletion.push(b);
-        else upcomingGigs.push(b);
-      } else if (b.status === "awaiting_payment") {
-        upcomingGigs.push(b);
-      }
-    });
+    // 1. Cancelled Bookings (Always Past)
+    if (b.status === "cancelled") {
+      past.push(b);
+    }
+    // 2. Customer's Past Bookings (Customer has submitted their review)
+    //    This is independent of whether the performer has reviewed or if status is 'completed'.
+    else if (b.customerReviewSubmitted === true) { // <--- KEY CHANGE FOR INDEPENDENCE
+      past.push(b);
+    }
+    // 3. Pending Requests (Needs Performer Action)
+    else if (b.status === "pending" || b.status === "new") {
+      pendingRequests.push(b);
+    }
+    // 4. Pending Completion (Gig has passed, and customer still needs to review/tip)
+    //    Conditions:
+    //    - Status is 'confirmed' AND finish time has passed AND customer has NOT reviewed
+    //    - Status is 'completed' AND customer has NOT reviewed (in case performer completes first)
+    else if (
+        (finishTime && finishTime <= now && b.customerReviewSubmitted !== true) || // Gig is over, customer hasn't reviewed
+        (b.status === "completed" && b.customerReviewSubmitted !== true) // Status is 'completed', customer hasn't reviewed
+    ) {
+        pendingCompletion.push(b);
+    }
+    // 5. Upcoming Gigs (Confirmed and still in the future, OR awaiting payment)
+    else {
+      upcomingGigs.push(b);
+    }
+  });
 
-    const sortByStartTime = (arr: Booking[]) =>
-      arr.sort(
-        (a, b) =>
-          (getBookingDateTime(a, "startTime")?.getTime() || 0) -
-          (getBookingDateTime(b, "startTime")?.getTime() || 0)
-      );
+  const sortByStartTime = (arr: Booking[]) =>
+    arr.sort(
+      (a, b) =>
+        (getBookingDateTime(a, "startTime")?.getTime() || 0) -
+        (getBookingDateTime(b, "startTime")?.getTime() || 0)
+    );
 
-    const sortByFinishDesc = (arr: Booking[]) =>
-      arr.sort(
-        (a, b) =>
-          (getBookingDateTime(b, "finishTime")?.getTime() || 0) -
-          (getBookingDateTime(a, "finishTime")?.getTime() || 0)
-      );
+  const sortByFinishDesc = (arr: Booking[]) =>
+    arr.sort(
+      (a, b) =>
+        (getBookingDateTime(b, "finishTime")?.getTime() || 0) -
+        (getBookingDateTime(a, "finishTime")?.getTime() || 0)
+    );
 
-    return {
-      pendingRequests: sortByStartTime(pendingRequests),
-      upcomingGigs: sortByStartTime(upcomingGigs),
-      pendingCompletion: sortByStartTime(pendingCompletion),
-      past: sortByFinishDesc(past),
-    };
+  return {
+    pendingRequests: sortByStartTime(pendingRequests),
+    upcomingGigs: sortByStartTime(upcomingGigs),
+    pendingCompletion: sortByStartTime(pendingCompletion),
+    past: sortByFinishDesc(past),
   };
+};
 
-  const { pendingRequests, upcomingGigs, pendingCompletion, past } = categorizeBookings();
+// ✅ Destructure AFTER the function
+const { pendingRequests, upcomingGigs, pendingCompletion, past } = categorizeBookings();
 
   if (authLoading) {
     return (
@@ -248,29 +261,45 @@ export default function BookingsPage() {
     <Card key={b.id} className={allowCancel ? "bg-secondary/30" : "bg-card/80 opacity-80"}>
       <CardHeader>
         <CardTitle className="text-xl font-headline">
-          Booking for: {b.performerName}
+          {" "}
+          Booking for: {b.performerName}{" "}
         </CardTitle>
         <CardDescription>
+          {" "}
           Status:{" "}
           <Badge
-            variant={b.status === "confirmed" || b.status === "completed" ? "default" : "destructive"}
+            variant={
+              b.status === "confirmed" || b.status === "completed" ? "default" : "destructive"
+            }
             className="capitalize"
           >
-            {b.status ? b.status.replace(/_/g, " ") : "N/A"}
+            {" "}
+            {b.status ? b.status.replace(/_/g, " ") : "N/A"}{" "}
           </Badge>
         </CardDescription>
       </CardHeader>
       <CardContent className="text-sm space-y-1">
-        <p><strong>Date:</strong> {b.date?.toDate ? format(b.date.toDate(), "PPP") : "N/A"}</p>
-        <p><strong>Time:</strong> {formatBookingTime(b.date, b.startTime)} - {formatBookingTime(b.date, b.finishTime)}</p>
-        <p><strong>Location:</strong> {b.location}</p>
-        <p><strong>Price:</strong> ${b.pricePerHour.toFixed(2)}</p>
+        <p>
+          <strong>Date:</strong> {b.date?.toDate ? format(b.date.toDate(), "PPP") : "N/A"}
+        </p>
+        <p>
+          <strong>Time:</strong> {formatBookingTime(b.date, b.startTime)} -{" "}
+          {formatBookingTime(b.date, b.finishTime)}
+        </p>
+        <p>
+          <strong>Location:</strong> {b.location}
+        </p>
+        <p>
+          <strong>Price:</strong> ${b.pricePerHour.toFixed(2)}
+        </p>
         {b.tipAmount && b.tipAmount > 0 && (
-          <p className="font-semibold"><strong>Tip Paid:</strong> ${b.tipAmount.toFixed(2)}</p>
+          <p className="font-semibold">
+            <strong>Tip Paid:</strong> ${b.tipAmount.toFixed(2)}
+          </p>
         )}
       </CardContent>
       <CardFooter className="flex items-center gap-2">
-        {(b.status === "awaiting_payment") && (
+        {b.status === "awaiting_payment" && (
           <>
             <Button
               onClick={() => router.push(`/bookings/${b.id}/pay`)}
@@ -278,36 +307,31 @@ export default function BookingsPage() {
             >
               <CreditCard className="w-4 h-4 mr-2" /> Confirm & Pay Now
             </Button>
-            <Button
-              variant="destructive"
-              onClick={() => handleCancelBooking(b.id)}
-            >
-              Cancel
+            <Button variant="destructive" onClick={() => handleCancelBooking(b.id)}>
+              {" "}
+              Cancel{" "}
             </Button>
           </>
         )}
-
         {b.status === "pending" && (
-          <p className="text-sm text-muted-foreground">
-            Awaiting response from performer...
-          </p>
+          <p className="text-sm text-muted-foreground"> Awaiting response from performer... </p>
         )}
-
         {b.status === "confirmed" && !isPendingCompletion && (
-          <p className="text-sm text-green-600 font-semibold">
-            This booking is confirmed! See you there.
-          </p>
-        )}
-
-        {b.status === "confirmed" && isPendingCompletion && canReview(b) && (
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setReviewingBooking(b)}
-          >
-            <Star className="w-4 h-4 mr-2" /> Leave a Review & Tip
-          </Button>
-        )}
+  b.customerReviewedPerformer ? (
+    <div className="text-sm text-green-600 font-semibold p-2 bg-green-50 rounded-md border border-green-200">
+      You have reviewed this booking.
+    </div>
+  ) : (
+    <p className="text-sm text-green-600 font-semibold">
+      This booking is confirmed! See you there.
+    </p>
+  )
+)}
+        {isPendingCompletion && !b.customerReviewedPerformer && b.customerBookingStatus !== "completed" && (
+  <Button variant="outline" size="sm" onClick={() => setReviewingBooking(b)}>
+    <Star className="w-4 h-4 mr-2" /> Leave a Review & Tip
+  </Button>
+)}
       </CardFooter>
     </Card>
   );
@@ -351,9 +375,7 @@ export default function BookingsPage() {
 
   return (
     <div className="container mx-auto py-8">
-      <h1 className="text-3xl font-headline font-semibold mb-8 text-primary">
-        My Bookings
-      </h1>
+      <h1 className="text-3xl font-headline font-semibold mb-8 text-primary"> My Bookings </h1>
 
       {/* Pending Requests */}
       {renderSection(
@@ -374,7 +396,7 @@ export default function BookingsPage() {
       )}
 
       {/* Pending Completions */}
-      {pendingCompletion.length > 0 && renderSection(
+      {renderSection(
         "Pending Completions",
         pendingCompletion,
         false,
@@ -394,11 +416,11 @@ export default function BookingsPage() {
               History,
               "Your performance history."
             )}
-
             {past.length > 3 && (
               <div className="text-right mt-2">
                 <Link href="/bookings/past" className="text-sm text-primary underline">
-                  View All Past Bookings
+                  {" "}
+                  View All Past Bookings{" "}
                 </Link>
               </div>
             )}
@@ -408,17 +430,16 @@ export default function BookingsPage() {
 
       {/* Review Dialog */}
       {reviewingBooking && (
-        <Dialog
-          open={!!reviewingBooking}
-          onOpenChange={(o) => !o && setReviewingBooking(null)}
-        >
+        <Dialog open={!!reviewingBooking} onOpenChange={(o) => !o && setReviewingBooking(null)}>
           <DialogContent>
             <DialogHeader>
               <DialogTitle>
-                Review your experience with {reviewingBooking.performerName}
+                {" "}
+                Review your experience with {reviewingBooking.performerName}{" "}
               </DialogTitle>
               <DialogDescription>
-                Your feedback helps our community. You can also add an optional tip.
+                {" "}
+                Your feedback helps our community. You can also add an optional tip.{" "}
               </DialogDescription>
             </DialogHeader>
             <ReviewAndTipForm

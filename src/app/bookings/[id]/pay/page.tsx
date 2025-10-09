@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { notFound, useRouter, useParams } from "next/navigation";
 import { doc, getDoc, updateDoc } from "firebase/firestore";
-import { db } from "@/lib/firebase";
+import { db } from "@/lib/firebase"; // Client-side Firestore for read/update after payment
 import { useAuth } from "@/contexts/auth-context";
 import type { Booking } from "@/types";
 import { Loader2, AlertTriangle, Lock } from "lucide-react";
@@ -62,11 +62,15 @@ function CheckoutForm({
 
     if (paymentIntent && paymentIntent.status === "succeeded") {
       try {
+        // This update is client-side, but after Stripe confirms payment.
+        // Your security rules currently allow this:
+        // (isOwner(resource.data.customerId) && request.resource.data.keys().hasOnly(['status', 'stripePaymentIntentId']))
+        // The user is authenticated here, and isOwner will be true.
         const bookingRef = doc(db, "bookings", booking.id);
         await updateDoc(bookingRef, { status: "confirmed" });
         onPaymentSuccess();
       } catch (dbError) {
-        console.error("Error updating booking status:", dbError);
+        console.error("Error updating booking status after Stripe success:", dbError);
         setErrorMessage(
           "Payment succeeded but updating booking failed. Please contact support."
         );
@@ -109,7 +113,7 @@ export default function PayForBookingPage() {
   const router = useRouter();
 
   const getBookingDetails = useCallback(
-    async (uid: string) => {
+    async (uid: string) => { // uid is passed from `user.uid`
       const bookingId = params.id;
       if (!bookingId) {
         setError("Booking ID not found in the URL.");
@@ -145,21 +149,33 @@ export default function PayForBookingPage() {
 
         setBooking(bookingData);
 
+        // --- NEW/MODIFIED: Get Firebase ID token and include in fetch headers ---
+        const idToken = await user?.getIdToken(); // Get the ID token from the authenticated user
+
+        if (!idToken) {
+          // If for some reason the user object is present but getIdToken fails (e.g., token expired/invalidated)
+          throw new Error("Authentication token missing. Please log in again.");
+        }
+
         const res = await fetch("/api/create-payment-intent", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${idToken}`, // Pass the ID token for server-side verification
+          },
           body: JSON.stringify({
-            amount: bookingData.pricePerHour,
+            amount: bookingData.pricePerHour, // Send amount, backend will verify/use its own
             bookingId: bookingData.id,
           }),
         });
 
         if (!res.ok) {
           const { error: serverError } = await res.json();
-          if (serverError && serverError.includes("not configured")) {
-            setIsDemoMode(true);
+          if (serverError && serverError.includes("Stripe is not configured")) {
+            setIsDemoMode(true); // Now uses the specific error message from your API
             setError(serverError);
           } else {
+            // Catches any other error from the API, including 401 Unauthorized, 403 Forbidden etc.
             throw new Error(serverError || "Failed to create payment intent.");
           }
         } else {
@@ -173,7 +189,8 @@ export default function PayForBookingPage() {
         setIsLoading(false);
       }
     },
-    [params.id]
+    // --- NEW/MODIFIED: Add `user` to the dependency array ---
+    [params.id, user]
   );
 
   useEffect(() => {
@@ -182,8 +199,10 @@ export default function PayForBookingPage() {
       getBookingDetails(user.uid);
     } else if (!authLoading && !user) {
       setIsLoading(false);
+      // Optional: Redirect to login if a user is expected but not found
+      // router.push('/login');
     }
-  }, [user, authLoading, getBookingDetails]);
+  }, [user, authLoading, getBookingDetails]); // Ensure `user` is in useEffect dependencies too
 
   const onPaymentSuccess = () => {
     router.push("/bookings");

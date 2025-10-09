@@ -134,7 +134,7 @@ const bookingData = {
   customerId: user.uid,               // changed
   customerName: customerData.displayName,
   customerImageUrl: customerData.imageUrl,
-  customerReviewSubmitted: false,
+  customerReviewedPerformer: false,
   performerReviewSubmitted: false,
 };
 

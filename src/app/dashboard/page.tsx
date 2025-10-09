@@ -1,22 +1,54 @@
 "use client";
 
-import { format, parse } from "date-fns";
+import { format } from "date-fns";
 
 // Format Firestore date + "HH:mm" to 12-hour AM/PM
 function formatBookingTime(date: any, time?: string) {
   if (!date || !time) return "N/A";
   const [h, m] = time.split(":").map(Number);
   const d = new Date(date.toDate());
-  d.setHours(h, m);
+  d.setHours(h, m, 0, 0);
   return format(d, "h:mm a");
 }
 
-import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+  CardFooter
+} from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
-import { Check, X, Calendar, Clock, History, Loader2, UserX, PackageOpen, DollarSign, Star, AlertTriangle, Video, Link as LinkIcon, Save, StarHalf, PartyPopper } from "lucide-react";
+import {
+  Check,
+  X,
+  Calendar,
+  Clock,
+  History,
+  Loader2,
+  UserX,
+  PackageOpen,
+  DollarSign,
+  Star,
+  Video,
+  Link as LinkIcon,
+  Save,
+  StarHalf,
+  PartyPopper
+} from "lucide-react";
 import { useEffect, useState } from "react";
-import { collection, query, orderBy, getDocs, doc, updateDoc, where, getDoc, serverTimestamp } from "firebase/firestore";
+import {
+  collection,
+  query,
+  getDocs,
+  doc,
+  updateDoc,
+  where,
+  getDoc,
+  serverTimestamp
+} from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/auth-context";
@@ -33,42 +65,66 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-  AlertDialogTrigger,
+  AlertDialogTrigger
 } from "@/components/ui/alert-dialog";
 import { Input } from "@/components/ui/input";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { CustomerReviewForm } from "@/components/customer-review-form";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger
+} from "@/components/ui/dialog";
+import { PerformerReviewCustomerForm } from "@/components/performer-review-customer-form";
 
-// A small component to handle updating the meeting link
-function MeetingLinkManager({ bookingId, initialLink }: { bookingId: string, initialLink?: string }) {
-  const [link, setLink] = useState(initialLink || '');
+// Meeting Link Manager
+function MeetingLinkManager({
+  bookingId,
+  initialLink
+}: {
+  bookingId: string;
+  initialLink?: string;
+}) {
+  const [link, setLink] = useState(initialLink || "");
   const [isSaving, setIsSaving] = useState(false);
   const { toast } = useToast();
 
   const handleSave = async () => {
-    if (!link.startsWith('http')) {
-        toast({ title: 'Invalid URL', description: 'Please enter a valid URL (e.g., starting with http:// or https://)', variant: 'destructive' });
-        return;
+    if (!link.startsWith("http")) {
+      toast({
+        title: "Invalid URL",
+        description: "Please enter a valid URL (e.g., starting with http:// or https://)",
+        variant: "destructive"
+      });
+      return;
     }
     setIsSaving(true);
     try {
-        const bookingRef = doc(db, "bookings", bookingId);
-        await updateDoc(bookingRef, { meetingLink: link });
-        toast({ title: 'Meeting Link Saved!', description: 'The customer can now join the virtual performance.' });
+      const bookingRef = doc(db, "bookings", bookingId);
+      await updateDoc(bookingRef, { meetingLink: link });
+      toast({
+        title: "Meeting Link Saved!",
+        description: "The customer can now join the virtual performance."
+      });
     } catch (error) {
-        console.error('Error saving meeting link:', error);
-        toast({ title: 'Error', description: 'Could not save the link. Please try again.', variant: 'destructive' });
+      console.error("Error saving meeting link:", error);
+      toast({
+        title: "Error",
+        description: "Could not save the link. Please try again.",
+        variant: "destructive"
+      });
     } finally {
-        setIsSaving(false);
+      setIsSaving(false);
     }
   };
 
   return (
     <div className="flex items-center gap-2 mt-2">
       <LinkIcon className="h-4 w-4 text-muted-foreground" />
-      <Input 
-        type="url" 
-        placeholder="Paste meeting link here" 
+      <Input
+        type="url"
+        placeholder="Paste meeting link here"
         value={link}
         onChange={(e) => setLink(e.target.value)}
         className="h-8 flex-grow"
@@ -80,7 +136,6 @@ function MeetingLinkManager({ bookingId, initialLink }: { bookingId: string, ini
     </div>
   );
 }
-
 
 export default function DashboardPage() {
   const { user, loading: authLoading } = useAuth();
@@ -108,23 +163,23 @@ export default function DashboardPage() {
       const bookingsData = bookingsSnapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
-      } as Booking));
-      
-      // Sort bookings by date client-side to avoid needing a composite index
+      })) as Booking[];
+
+      // Sort bookings by date
       bookingsData.sort((a, b) => {
         const dateA = a.createdAt?.toMillis() || 0;
         const dateB = b.createdAt?.toMillis() || 0;
         return dateB - dateA;
       });
+
       setBookings(bookingsData);
 
-      // Fetch performer profile for analytics
+      // Fetch performer profile
       const performerDocRef = doc(db, "performers", user.uid);
       const performerSnap = await getDoc(performerDocRef);
       if (performerSnap.exists()) {
         setPerformerProfile(performerSnap.data() as Performer);
       }
-
     } catch (err) {
       console.error("Error fetching dashboard data:", err);
       setError("Failed to load your dashboard. Please try again later.");
@@ -134,48 +189,60 @@ export default function DashboardPage() {
   };
 
   useEffect(() => {
-    if (!authLoading && user) {
-      fetchDashboardData();
-    } else if (!authLoading && !user) {
-      setIsLoading(false);
-    }
+    if (!authLoading) fetchDashboardData();
   }, [user, authLoading]);
 
-  const updateBookingStatus = async (bookingId: string, status: Booking['status']) => {
-    try {
-      const bookingRef = doc(db, "bookings", bookingId);
-      const updateData: { status: Booking['status'], completedAt?: any } = { status };
+  const updateBookingStatus = async (bookingId: string, status: Booking["status"]) => {
+  try {
+    const bookingRef = doc(db, "bookings", bookingId);
 
-      if (status === 'completed') {
-        updateData.completedAt = serverTimestamp();
-      }
+    // Fetch current booking first
+    const bookingSnap = await getDoc(bookingRef);
+    const currentBooking = bookingSnap.data();
 
-      await updateDoc(bookingRef, updateData);
-      toast({
-        title: `Booking ${status.charAt(0).toUpperCase() + status.slice(1)}`,
-        description: `The booking has been successfully updated.`,
-      });
-      fetchDashboardData(); 
-    } catch (err) {
-      console.error(`Error updating booking to ${status}:`, err);
-      toast({
-        title: "Error",
-        description: "Could not update the booking. Please try again.",
-        variant: "destructive",
-      });
+    // Preserve performerReviewSubmitted
+    const updateData: { status: Booking["status"]; completedAt?: any; performerReviewSubmitted?: boolean } = {
+      status,
+      performerReviewSubmitted: currentBooking?.performerReviewSubmitted ?? false
+    };
+
+    if (status === "completed") {
+      updateData.completedAt = serverTimestamp();
     }
-  };
-  
-  // Helper to get a full Date object for sorting, including time
+
+    await updateDoc(bookingRef, updateData);
+    toast({
+      title: `Booking ${status.charAt(0).toUpperCase() + status.slice(1)}`,
+      description: "The booking has been successfully updated."
+    });
+    fetchDashboardData();
+  } catch (err) {
+    console.error(`Error updating booking to ${status}:`, err);
+    toast({
+      title: "Error",
+      description: "Could not update the booking. Please try again.",
+      variant: "destructive"
+    });
+  }
+};
+
   const getBookingDateTime = (booking: Booking): Date => {
-      const d = booking.date?.toDate() || new Date(0);
-      if (booking.startTime) {
-          const [h, m] = booking.startTime.split(':').map(Number);
-          if (!isNaN(h) && !isNaN(m)) {
-              d.setHours(h, m, 0, 0);
-          }
-      }
-      return d;
+    const d = booking.date?.toDate() || new Date(0);
+    if (booking.startTime) {
+      const [h, m] = booking.startTime.split(":").map(Number);
+      if (!isNaN(h) && !isNaN(m)) d.setHours(h, m, 0, 0);
+    }
+    return d;
+  };
+
+  // 🔹 Place the new function right below it
+  function getBookingEndDateTime(booking: Booking): Date {
+    const d = booking.date?.toDate() || new Date(0);
+    if (booking.finishTime) {
+      const [h, m] = booking.finishTime.split(":").map(Number);
+      if (!isNaN(h) && !isNaN(m)) d.setHours(h, m, 0, 0);
+    }
+    return d;
   }
 
   const getCategorizedBookings = () => {
@@ -183,51 +250,45 @@ export default function DashboardPage() {
     const upcoming: Booking[] = [];
     const pendingCompletion: Booking[] = [];
     const past: Booking[] = [];
+    const now = new Date();
 
     bookings.forEach(booking => {
-        const status = booking.status || 'pending';
+      const status = booking.status || "pending";
+      const startDateTime = getBookingDateTime(booking);
+      const endDateTime = getBookingEndDateTime(booking);
 
-        if (status === 'completed' || status === 'cancelled') {
-            past.push(booking);
-        } else if (status === 'pending') {
-            pending.push(booking);
-        } else if (status === 'awaiting_payment') {
-            upcoming.push(booking);
-        } else if (status === 'confirmed') {
-            pendingCompletion.push(booking);
+      if (status === "completed" || status === "cancelled") {
+        past.push(booking);
+      } else if (status === "pending") {
+        pending.push(booking);
+      } else if (status === "awaiting_payment") {
+        upcoming.push(booking);
+      } else if (status === "confirmed" || status === "payment_accepted") {
+        if (endDateTime > now) {
+          upcoming.push(booking); // still upcoming
+        } else {
+          pendingCompletion.push(booking); // finish time passed
         }
+      }
     });
 
-    // Sort pending by event date (earliest event date first)
-    pending.sort((a, b) => 
-  (a.createdAt?.toMillis() || 0) - (b.createdAt?.toMillis() || 0)
-);
-
-    // Sort upcoming & pending completion by when they were created (oldest booking request first)
-    // Sort upcoming by event start time (earliest first)
-upcoming.sort((a, b) =>
-  (a.createdAt?.toMillis() || 0) - (b.createdAt?.toMillis() || 0)
-);
-
-// Sort pending completion by event finish time (earliest first)
-pendingCompletion.sort((a, b) =>
-  (a.createdAt?.toMillis() || 0) - (b.createdAt?.toMillis() || 0)
-);
-
-    // Sort past bookings by date (most recent event first)
+    // Sorting
+    pending.sort((a, b) => (a.createdAt?.toMillis() || 0) - (b.createdAt?.toMillis() || 0));
+    upcoming.sort((a, b) => (a.createdAt?.toMillis() || 0) - (b.createdAt?.toMillis() || 0));
+    pendingCompletion.sort((a, b) => (a.createdAt?.toMillis() || 0) - (b.createdAt?.toMillis() || 0));
     past.sort((a, b) => getBookingDateTime(b).getTime() - getBookingDateTime(a).getTime());
 
     return { pending, upcoming, pendingCompletion, past };
   };
 
   const { pending, upcoming, pendingCompletion, past } = getCategorizedBookings();
-  
+  const pastToShow = past.slice(0, 3); // only show the 3 most recent past bookings
+
   const totalEarnings = past
-    .filter(b => b.status === 'completed')
+    .filter(b => b.status === "completed")
     .reduce((acc, booking) => acc + (booking.performerPayout ?? 0) + (booking.tipAmount ?? 0), 0);
   const averageRating = performerProfile?.rating || 0;
   const totalReviews = performerProfile?.reviewCount || 0;
-
 
   if (authLoading) {
     return (
@@ -241,12 +302,16 @@ pendingCompletion.sort((a, b) =>
   if (!user) {
     return (
       <div className="container mx-auto py-8 text-center">
-         <Card className="max-w-md mx-auto shadow-lg">
+        <Card className="max-w-md mx-auto shadow-lg">
           <CardHeader>
-            <CardTitle className="flex items-center justify-center"><UserX className="w-8 h-8 mr-2 text-primary" /> Login Required</CardTitle>
+            <CardTitle className="flex items-center justify-center">
+              <UserX className="w-8 h-8 mr-2 text-primary" /> Login Required
+            </CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-muted-foreground mb-6">You need to be logged in to view your performer dashboard.</p>
+            <p className="text-muted-foreground mb-6">
+              You need to be logged in to view your performer dashboard.
+            </p>
             <Button asChild>
               <Link href="/login">Go to Login Page</Link>
             </Button>
@@ -255,7 +320,7 @@ pendingCompletion.sort((a, b) =>
       </div>
     );
   }
-  
+
   if (isLoading && bookings.length === 0) {
     return (
       <div className="flex justify-center items-center min-h-[calc(100vh-200px)]">
@@ -333,58 +398,56 @@ pendingCompletion.sort((a, b) =>
           ) : (
             <div className="space-y-4">
               {pending.map(booking => {
-                const status = booking.status || 'pending';
+                const status = booking.status || "pending";
                 return (
                   <Card key={booking.id} className="bg-card/80 opacity-80">
                     <CardHeader className="pb-2">
                       <CardTitle className="text-lg font-headline">
-                        Booking for {booking.customerName || 'Customer'}
+                        Booking for {booking.customerName || "Customer"}
                       </CardTitle>
                       <CardDescription className="text-xs">
-                        Status:{' '}
+                        Status:{" "}
                         <span className="font-semibold capitalize ml-1 text-accent">
-                          {status.replace('_', ' ')}
+                          {status.replace("_", " ")}
                         </span>
                       </CardDescription>
                     </CardHeader>
-
                     <CardContent className="text-sm space-y-1">
                       <p>
-                        <strong>Date:</strong>{' '}
-                        {booking.date ? format(booking.date.toDate(), 'PPP') : 'N/A'}
+                        {" "}
+                        <strong>Date:</strong>{" "}
+                        {booking.date ? format(booking.date.toDate(), "PPP") : "N/A"}
                       </p>
                       <p>
-                        <strong>Time:</strong>{' '}
+                        {" "}
+                        <strong>Time:</strong>{" "}
                         {booking.startTime && booking.finishTime
                           ? `${formatBookingTime(booking.date, booking.startTime)} to ${formatBookingTime(
                               booking.date,
                               booking.finishTime
                             )}`
-                          : 'N/A'}
+                          : "N/A"}
                       </p>
                       <p>
-                        <strong>Location:</strong> {booking.location}
+                        {" "}
+                        <strong>Location:</strong> {booking.location}{" "}
                       </p>
-
                       {booking.isVirtual && (
                         <Badge variant="outline" className="w-fit mt-1 bg-background text-xs">
-                          <Video className="w-3 h-3 mr-1.5" />
-                          Virtual
+                          <Video className="w-3 h-3 mr-1.5" /> Virtual
                         </Badge>
                       )}
-
                       <div className="text-sm bg-secondary/20 p-3 rounded-md mt-2">
                         <div className="flex justify-between">
-                          <span>Client Pays:</span>{' '}
+                          <span>Client Pays:</span>{" "}
                           <span>${(booking.pricePerHour ?? 0).toFixed(2)}</span>
                         </div>
                         <div className="flex justify-between font-bold mt-1 pt-1 border-t">
-                          <span>Your Payout:</span>{' '}
+                          <span>Your Payout:</span>{" "}
                           <span>${(booking.performerPayout ?? 0).toFixed(2)}</span>
                         </div>
                       </div>
                     </CardContent>
-
                     <CardFooter className="flex gap-4">
                       <AlertDialog>
                         <AlertDialogTrigger asChild>
@@ -396,18 +459,20 @@ pendingCompletion.sort((a, b) =>
                           <AlertDialogHeader>
                             <AlertDialogTitle>Accept this booking?</AlertDialogTitle>
                             <AlertDialogDescription>
-                              This will confirm your availability and notify the customer that payment is due.
+                              This will confirm your availability and notify the customer that
+                              payment is due.
                             </AlertDialogDescription>
                           </AlertDialogHeader>
                           <AlertDialogFooter>
                             <AlertDialogCancel>Cancel</AlertDialogCancel>
-                            <AlertDialogAction onClick={() => updateBookingStatus(booking.id, 'awaiting_payment')}>
+                            <AlertDialogAction
+                              onClick={() => updateBookingStatus(booking.id, "awaiting_payment")}
+                            >
                               Yes, Accept
                             </AlertDialogAction>
                           </AlertDialogFooter>
                         </AlertDialogContent>
                       </AlertDialog>
-
                       <AlertDialog>
                         <AlertDialogTrigger asChild>
                           <Button size="sm" variant="outline">
@@ -418,13 +483,14 @@ pendingCompletion.sort((a, b) =>
                           <AlertDialogHeader>
                             <AlertDialogTitle>Decline this booking?</AlertDialogTitle>
                             <AlertDialogDescription>
-                              This will permanently decline this request and notify the customer. This cannot be undone.
+                              This will permanently decline this request and notify the customer.
+                              This cannot be undone.
                             </AlertDialogDescription>
                           </AlertDialogHeader>
                           <AlertDialogFooter>
                             <AlertDialogCancel>Cancel</AlertDialogCancel>
                             <AlertDialogAction
-                              onClick={() => updateBookingStatus(booking.id, 'cancelled')}
+                              onClick={() => updateBookingStatus(booking.id, "cancelled")}
                               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
                             >
                               Yes, Decline
@@ -440,18 +506,22 @@ pendingCompletion.sort((a, b) =>
           )}
         </CardContent>
       </Card>
-      
+
       {/* Upcoming Bookings */}
       <Card className="shadow-lg">
         <CardHeader>
           <CardTitle className="flex items-center">
             <Calendar className="w-6 h-6 mr-2 text-primary" /> Upcoming Gigs
           </CardTitle>
-          <CardDescription>Your accepted performances that are awaiting payment from the customer.</CardDescription>
+          <CardDescription>
+            Your accepted performances that are awaiting payment from the customer.
+          </CardDescription>
         </CardHeader>
         <CardContent>
           {upcoming.length === 0 ? (
-            <p className="text-muted-foreground text-center py-4">No gigs are currently awaiting payment.</p>
+            <p className="text-muted-foreground text-center py-4">
+              No gigs are currently awaiting payment.
+            </p>
           ) : (
             <div className="space-y-4">
               {upcoming.map(booking => {
@@ -459,32 +529,34 @@ pendingCompletion.sort((a, b) =>
                   <Card key={booking.id} className="bg-card/80 opacity-80">
                     <CardHeader className="pb-2">
                       <CardTitle className="text-lg font-headline">
-                        Booking for {booking.customerName || 'Customer'}
+                        Booking for {booking.customerName || "Customer"}
                       </CardTitle>
                       <CardDescription className="text-xs">
-                        Status:{' '}
+                        Status:{" "}
                         <span className="font-semibold capitalize ml-1 text-accent">
-                          Awaiting Payment
+                          {booking.status.replace("_", " ")}
                         </span>
                       </CardDescription>
                     </CardHeader>
-
                     <CardContent className="text-sm space-y-1">
                       <p>
-                        <strong>Date:</strong>{' '}
-                        {booking.date ? format(booking.date.toDate(), 'PPP') : 'N/A'}
+                        {" "}
+                        <strong>Date:</strong>{" "}
+                        {booking.date ? format(booking.date.toDate(), "PPP") : "N/A"}
                       </p>
                       <p>
-                        <strong>Time:</strong>{' '}
+                        {" "}
+                        <strong>Time:</strong>{" "}
                         {booking.startTime && booking.finishTime
                           ? `${formatBookingTime(booking.date, booking.startTime)} to ${formatBookingTime(
                               booking.date,
                               booking.finishTime
                             )}`
-                          : 'N/A'}
+                          : "N/A"}
                       </p>
                       <p>
-                        <strong>Location:</strong> {booking.location}
+                        {" "}
+                        <strong>Location:</strong> {booking.location}{" "}
                       </p>
                     </CardContent>
                   </Card>
@@ -501,7 +573,9 @@ pendingCompletion.sort((a, b) =>
           <CardTitle className="flex items-center">
             <PartyPopper className="w-6 h-6 mr-2 text-primary" /> Pending Completions
           </CardTitle>
-          <CardDescription>These gigs are paid and confirmed! After the performance, mark them as completed.</CardDescription>
+          <CardDescription>
+            These gigs are paid and confirmed! After the performance, mark them as completed.
+          </CardDescription>
         </CardHeader>
         <CardContent>
           {pendingCompletion.length === 0 ? (
@@ -513,67 +587,65 @@ pendingCompletion.sort((a, b) =>
                   <Card key={booking.id} className="bg-card/80 opacity-80">
                     <CardHeader className="pb-2">
                       <CardTitle className="text-lg font-headline">
-                        Booking for {booking.customerName || 'Customer'}
+                        Booking for {booking.customerName || "Customer"}
                       </CardTitle>
                       <CardDescription className="text-xs">
-                        Status:{' '}
+                        Status:{" "}
                         <span className="font-semibold capitalize ml-1 text-green-600">
                           Confirmed
                         </span>
                       </CardDescription>
                     </CardHeader>
-
                     <CardContent className="text-sm space-y-1">
                       <p>
-                        <strong>Date:</strong>{' '}
-                        {booking.date ? format(booking.date.toDate(), 'PPP') : 'N/A'}
+                        {" "}
+                        <strong>Date:</strong>{" "}
+                        {booking.date ? format(booking.date.toDate(), "PPP") : "N/A"}
                       </p>
                       <p>
-                        <strong>Time:</strong>{' '}
+                        {" "}
+                        <strong>Time:</strong>{" "}
                         {booking.startTime && booking.finishTime
                           ? `${formatBookingTime(booking.date, booking.startTime)} to ${formatBookingTime(
                               booking.date,
                               booking.finishTime
                             )}`
-                          : 'N/A'}
+                          : "N/A"}
                       </p>
                       <p>
-                        <strong>Location:</strong> {booking.location}
+                        {" "}
+                        <strong>Location:</strong> {booking.location}{" "}
                       </p>
-
                       {booking.isVirtual && (
                         <Badge variant="outline" className="w-fit mt-1 bg-background text-xs">
-                          <Video className="w-3 h-3 mr-1.5" />
-                          Virtual
+                          <Video className="w-3 h-3 mr-1.5" /> Virtual
                         </Badge>
                       )}
-
                       <div className="text-sm bg-secondary/20 p-3 rounded-md mt-2">
                         <div className="flex justify-between">
-                          <span>Client Pays:</span>{' '}
+                          <span>Client Pays:</span>{" "}
                           <span>${(booking.pricePerHour ?? 0).toFixed(2)}</span>
                         </div>
                         <div className="flex justify-between font-bold mt-1 pt-1 border-t">
-                          <span>Your Payout:</span>{' '}
+                          <span>Your Payout:</span>{" "}
                           <span>${(booking.performerPayout ?? 0).toFixed(2)}</span>
                         </div>
                       </div>
-
                       {booking.isVirtual && (
                         <div className="pt-2">
                           <label className="text-xs font-semibold text-muted-foreground">
-                            Meeting Link
+                            {" "}
+                            Meeting Link{" "}
                           </label>
-                          <MeetingLinkManager
-                            bookingId={booking.id}
-                            initialLink={booking.meetingLink}
-                          />
+                          <MeetingLinkManager bookingId={booking.id} initialLink={booking.meetingLink} />
                         </div>
                       )}
                     </CardContent>
-
                     <CardFooter className="flex gap-2">
-                      <Dialog open={reviewingBookingId === booking.id} onOpenChange={(isOpen) => setReviewingBookingId(isOpen ? booking.id : null)}>
+                      <Dialog
+                        open={reviewingBookingId === booking.id}
+                        onOpenChange={isOpen => setReviewingBookingId(isOpen ? booking.id : null)}
+                      >
                         <DialogTrigger asChild>
                           <Button
                             size="sm"
@@ -584,24 +656,29 @@ pendingCompletion.sort((a, b) =>
                           </Button>
                         </DialogTrigger>
                         <DialogContent>
-                            <DialogHeader>
-                                <DialogTitle>Review Customer to Complete Gig</DialogTitle>
-                                <DialogDescription>
-                                    To finalize this booking, please provide your feedback on the customer.
-                                </DialogDescription>
-                            </DialogHeader>
-                            <CustomerReviewForm
+                          <DialogHeader>
+                            <DialogTitle>Review Customer to Complete Gig</DialogTitle>
+                            <DialogDescription>
+                              To finalize this booking, please provide your feedback on the customer.
+                            </DialogDescription>
+                          </DialogHeader>
+                          <PerformerReviewCustomerForm
   bookingId={booking.id}
-  customerId={booking.customerId}
-  performerId={user.uid} // ADD THIS LINE
-  onReviewSubmitted={() => {
-      setReviewingBookingId(null);
-      fetchDashboardData();
+  customerIdBeingReviewed={booking.customerId} // Renamed prop
+  performerId={user.uid}
+  onReviewSubmitted={async () => {
+    const bookingRef = doc(db, "bookings", booking.id);
+    await updateDoc(bookingRef, {
+      performerReviewSubmitted: true,
+      status: "completed",
+      completedAt: serverTimestamp(),
+    });
+    setReviewingBookingId(null);
+    fetchDashboardData();
   }}
 />
                         </DialogContent>
                       </Dialog>
-
                       <AlertDialog>
                         <AlertDialogTrigger asChild>
                           <Button
@@ -616,13 +693,14 @@ pendingCompletion.sort((a, b) =>
                           <AlertDialogHeader>
                             <AlertDialogTitle>Cancel This Gig?</AlertDialogTitle>
                             <AlertDialogDescription>
-                              Are you sure you want to cancel? The customer will be notified and refunded. This cannot be undone.
+                              Are you sure you want to cancel? The customer will be notified and
+                              refunded. This cannot be undone.
                             </AlertDialogDescription>
                           </AlertDialogHeader>
                           <AlertDialogFooter>
                             <AlertDialogCancel>Nevermind</AlertDialogCancel>
                             <AlertDialogAction
-                              onClick={() => updateBookingStatus(booking.id, 'cancelled')}
+                              onClick={() => updateBookingStatus(booking.id, "cancelled")}
                               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
                             >
                               Yes, Cancel Gig
@@ -642,107 +720,140 @@ pendingCompletion.sort((a, b) =>
       {/* Past Bookings */}
       <Card className="shadow-lg">
         <CardHeader>
-          <CardTitle className="flex items-center"><History className="w-6 h-6 mr-2 text-muted-foreground" /> Booking History</CardTitle>
+          <CardTitle className="flex items-center">
+            <History className="w-6 h-6 mr-2 text-muted-foreground" /> Booking History
+          </CardTitle>
           <CardDescription>Your past performances and cancelled bookings.</CardDescription>
         </CardHeader>
         <CardContent>
-            {past.length === 0 ? (
-                <div className="text-center py-10">
-                    <PackageOpen className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
-                    <p className="text-muted-foreground">No past bookings found.</p>
-                </div>
-            ) : (
-                <div className="space-y-4">
-                {past.map(booking => {
-                    const tipAmount = booking.tipAmount || 0;
-                    const totalPayout = (booking.performerPayout || 0) + tipAmount;
-                    const status = booking.status || 'completed';
-
-                    return (
-                        <Card key={booking.id} className="bg-card/80 opacity-80">
-                            <CardHeader className="pb-2">
-                                <CardTitle className="text-lg font-headline">
-  Booking for {booking.customerName || booking.userName || 'Customer'}
-</CardTitle>
-                                <CardDescription className="text-xs">
-                                    Status: 
-                                    <span className={`font-semibold capitalize ml-1 ${
-                                        status === 'cancelled' ? 'text-destructive' 
-                                        : status === 'completed' ? 'text-green-600' 
-                                        : 'text-primary'}`
-                                    }>
-                                        {status.replace('_', ' ')}
-                                    </span>
-                                </CardDescription>
-                            </CardHeader>
-                            <CardContent className="text-sm space-y-1">
-                                <p>
-  <strong>Date:</strong>{" "}
-  {booking.date ? format(booking.date.toDate(), "PPP") : "N/A"}
-</p>
-<p>
-  <strong>Time:</strong>{" "}
-  {booking.startTime && booking.finishTime
-    ? `${formatBookingTime(booking.date, booking.startTime)} to ${formatBookingTime(booking.date, booking.finishTime)}`
-    : "N/A"}
-</p>
-                                <p><strong>Location:</strong> {booking.location}</p>
-                                {booking.isVirtual && (
-                                    <Badge variant="outline" className="w-fit mt-1 bg-background text-xs">
-                                        <Video className="w-3 h-3 mr-1.5" />
-                                        Virtual
-                                    </Badge>
-                                )}
-                                {status === 'completed' && (
-                                    <div className="text-sm bg-secondary/20 p-3 rounded-md mt-2">
-                                        <div className="flex justify-between"><span>Base Payout:</span> <span>${(booking.performerPayout || 0).toFixed(2)}</span></div>
-                                        <div className="flex justify-between"><span>Tip Received:</span> <span>${tipAmount.toFixed(2)}</span></div>
-                                        <div className="flex justify-between font-bold mt-1 pt-1 border-t"><span>Total Payout:</span> <span>${totalPayout.toFixed(2)}</span></div>
-                                    </div>
-                                )}
-                            </CardContent>
-                            {status === 'completed' && (
-                                <CardFooter>
-                                    {booking.performerReviewSubmitted ? (
-                                        <div className="text-sm text-green-600 font-semibold p-2 bg-green-50 rounded-md border border-green-200">
-                                            You have reviewed this booking.
-                                        </div>
-                                    ) : (
-                                        <Dialog open={reviewingBookingId === booking.id} onOpenChange={(isOpen) => setReviewingBookingId(isOpen ? booking.id : null)}>
-                                            <DialogTrigger asChild>
-                                                <Button variant="outline" size="sm">
-                                                    <StarHalf className="w-4 h-4 mr-2" />
-                                                    Review Customer
-                                                </Button>
-                                            </DialogTrigger>
-                                            <DialogContent>
-                                                <DialogHeader>
-                                                    <DialogTitle>Review this Customer</DialogTitle>
-                                                    <DialogDescription>
-                                                        Your feedback helps maintain a respectful community. It will not be visible to the customer until they have also reviewed you, or after 14 days.
-                                                    </DialogDescription>
-                                                </DialogHeader>
-                                                <CustomerReviewForm
-  bookingId={booking.id}
-  customerId={booking.customerId}
-  performerId={user.uid} // ADD THIS LINE
-  onReviewSubmitted={() => {
-      setReviewingBookingId(null);
-      fetchDashboardData();
-  }}
-/>
-                                            </DialogContent>
-                                        </Dialog>
-                                    )}
-                                </CardFooter>
-                            )}
-                        </Card>
-                    );
-                })}
-                </div>
-            )}
+          {pastToShow.length === 0 ? (
+            <div className="text-center py-10">
+              <PackageOpen className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
+              <p className="text-muted-foreground">No past bookings found.</p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {pastToShow.map(booking => {
+                const tipAmount = booking.tipAmount || 0;
+                const totalPayout = (booking.performerPayout || 0) + tipAmount;
+                const status = booking.status || "completed";
+                return (
+                  <Card key={booking.id} className="bg-card/80 opacity-80">
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-lg font-headline">
+                        Booking for {booking.customerName || booking.userName || "Customer"}
+                      </CardTitle>
+                      <CardDescription className="text-xs">
+                        Status:{" "}
+                        <span
+                          className={`font-semibold capitalize ml-1 ${
+                            status === "cancelled"
+                              ? "text-destructive"
+                              : status === "completed"
+                              ? "text-green-600"
+                              : "text-primary"
+                          }`}
+                        >
+                          {" "}
+                          {status.replace("_", " ")}{" "}
+                        </span>
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="text-sm space-y-1">
+                      <p>
+                        {" "}
+                        <strong>Date:</strong>{" "}
+                        {booking.date ? format(booking.date.toDate(), "PPP") : "N/A"}
+                      </p>
+                      <p>
+                        {" "}
+                        <strong>Time:</strong>{" "}
+                        {booking.startTime && booking.finishTime
+                          ? `${formatBookingTime(booking.date, booking.startTime)} to ${formatBookingTime(
+                              booking.date,
+                              booking.finishTime
+                            )}`
+                          : "N/A"}
+                      </p>
+                      <p>
+                        <strong>Location:</strong> {booking.location}
+                      </p>
+                      {booking.isVirtual && (
+                        <Badge variant="outline" className="w-fit mt-1 bg-background text-xs">
+                          <Video className="w-3 h-3 mr-1.5" /> Virtual
+                        </Badge>
+                      )}
+                      {status === "completed" && (
+                        <div className="text-sm bg-secondary/20 p-3 rounded-md mt-2">
+                          <div className="flex justify-between">
+                            <span>Base Payout:</span>{" "}
+                            <span>${(booking.performerPayout || 0).toFixed(2)}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span>Tip Received:</span> <span>${tipAmount.toFixed(2)}</span>
+                          </div>
+                          <div className="flex justify-between font-bold mt-1 pt-1 border-t">
+                            <span>Total Payout:</span> <span>${totalPayout.toFixed(2)}</span>
+                          </div>
+                        </div>
+                      )}
+                    </CardContent>
+                    {status === "completed" && (
+                      <CardFooter>
+                        {booking.performerReviewSubmitted ? (
+                          <div className="text-sm text-green-600 font-semibold p-2 bg-green-50 rounded-md border border-green-200">
+                            You have reviewed this booking.
+                          </div>
+                        ) : (
+                          <Dialog
+                            open={reviewingBookingId === booking.id}
+                            onOpenChange={isOpen => setReviewingBookingId(isOpen ? booking.id : null)}
+                          >
+                            <DialogTrigger asChild>
+                              <Button variant="outline" size="sm">
+                                <StarHalf className="w-4 h-4 mr-2" /> Review Customer
+                              </Button>
+                            </DialogTrigger>
+                            <DialogContent>
+                              <DialogHeader>
+                                <DialogTitle>Review this Customer</DialogTitle>
+                                <DialogDescription>
+                                  Your feedback helps maintain a respectful community. It will not
+                                  be visible to the customer until they have also reviewed you, or
+                                  after 14 days.
+                                </DialogDescription>
+                              </DialogHeader>
+                              <PerformerReviewCustomerForm
+                            bookingId={booking.id}
+                            customerIdBeingReviewed={booking.customerId} // Renamed prop
+                            performerId={user.uid}
+                            onReviewSubmitted={async () => {
+                              await updateBookingStatus(booking.id, "completed"); // ✅ mark completed
+                              setReviewingBookingId(null);
+                              fetchDashboardData();
+                            }}
+                          />
+                            </DialogContent>
+                          </Dialog>
+                        )}
+                      </CardFooter>
+                    )}
+                  </Card>
+                );
+              })}
+            </div>
+          )}
         </CardContent>
       </Card>
+
+      {past.length > 3 && (
+        <div className="text-right mt-2">
+          <Link href="/dashboard/past" className="text-sm text-primary underline">
+            {" "}
+            View All Past Bookings{" "}
+          </Link>
+        </div>
+      )}
     </div>
   );
 }

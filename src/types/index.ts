@@ -68,7 +68,7 @@ export interface Booking {
   userId: string;
 
   // Review status
-  customerReviewSubmitted?: boolean;
+  customerReviewedPerformer?: boolean;
   performerReviewSubmitted?: boolean;
   reviewDeadline?: Timestamp;
 
