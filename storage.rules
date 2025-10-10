@@ -2,16 +2,23 @@ rules_version = '2';
 
 service firebase.storage {
   match /b/{bucket}/o {
-    
-    // This rule is for the specific folder where profile pictures are stored.
-    // It allows a logged-in user to write (upload) to their own subfolder.
-    match /customer-images/{userId}/{allPaths=**} {
-      allow write: if request.auth != null && request.auth.uid == userId;
+
+    // Rule for 'customer-images' and 'performer-images'
+    // Allows any authenticated user to READ any image in these collections.
+    // Allows an authenticated user to WRITE only to their own subfolder within these collections.
+    match /{imageCollection}/{userId}/{allPaths=**} {
+      // Check if the imageCollection is one of the allowed public/writeable collections
+      allow read: if imageCollection == 'customer-images' || imageCollection == 'performer-images';
+
+      // Only allow write if it's one of the allowed collections AND the user owns the folder
+      allow write: if request.auth != null && request.auth.uid == userId
+                       && (imageCollection == 'customer-images' || imageCollection == 'performer-images');
     }
-    
-    // This allows anyone to read any file. This is necessary for profile pictures to be public.
+
+    // Default rule: All other paths (not covered by the above specific match) are private.
+    // This catches anything that doesn't fit the /{collection}/{userId}/... pattern
     match /{allPaths=**} {
-      allow read: if true;
+      allow read, write: if false; // Deny all access by default for anything else
     }
   }
 }
