@@ -3,14 +3,25 @@ import { NextResponse } from "next/server";
 import Stripe from "stripe";
 import { db } from "@/lib/firebase-admin"; // import db (admin SDK)
 
-const stripe = new Stripe(
-  process.env.NODE_ENV === "production"
-    ? process.env.STRIPE_LIVE_KEY!
-    : process.env.STRIPE_TEST_KEY!,
-  { apiVersion: "2023-08-16" } // use valid Stripe API version
-);
+// DO NOT initialize Stripe here at the top level
 
 export async function POST(req: Request) {
+  // Get the secret key from environment variables
+  const stripeSecretKey = process.env.STRIPE_SECRET_KEY;
+
+  if (!stripeSecretKey) {
+    console.error("STRIPE_SECRET_KEY environment variable is not set.");
+    return NextResponse.json(
+      { error: "Server configuration error: Stripe secret key missing." },
+      { status: 500 }
+    );
+  }
+
+  // Initialize Stripe INSIDE the function
+  const stripe = new Stripe(stripeSecretKey, {
+    apiVersion: "2023-08-16", // use your valid Stripe API version
+  });
+
   try {
     const { performerId } = await req.json();
     if (!performerId)
