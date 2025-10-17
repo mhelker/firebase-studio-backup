@@ -9,12 +9,16 @@ try {
   adminApp = getApp();
 } catch (error) {
   const serviceAccountString = process.env.FIREBASE_SERVICE_ACCOUNT;
-  if (!serviceAccountString) throw new Error("FIREBASE_SERVICE_ACCOUNT not set.");
+  if (!serviceAccountString) {
+      console.error("FIREBASE_SERVICE_ACCOUNT not set. Firebase Admin SDK might not initialize.");
+      throw new Error("FIREBASE_SERVICE_ACCOUNT not set.");
+  }
 
   let serviceAccount;
   try {
     serviceAccount = JSON.parse(serviceAccountString);
-  } catch {
+  } catch (parseError) {
+    console.error("FIREBASE_SERVICE_ACCOUNT is not valid JSON:", parseError);
     throw new Error("FIREBASE_SERVICE_ACCOUNT is not valid JSON.");
   }
 
@@ -22,13 +26,9 @@ try {
   adminApp = initializeApp(options);
 }
 
-// Export functions instead of direct instances
-export function getFirebaseAdminFirestore(): Firestore {
-  return getFirestore(adminApp);
-}
+// Initialize Firestore and Auth instances here
+const adminDb = getFirestore(adminApp); // Rename to adminDb for clarity when importing
+const adminAuth = getAuth(adminApp);   // Rename to adminAuth for clarity when importing
 
-export function getFirebaseAdminAuth(): Auth {
-  return getAuth(adminApp);
-}
-
-export { FieldValue, Timestamp };
+// Export all necessary components directly
+export { adminApp, adminDb, adminAuth, FieldValue, Timestamp };

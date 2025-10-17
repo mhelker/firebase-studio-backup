@@ -1,8 +1,11 @@
+// src/app/api/stripe-connect/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import { Stripe } from 'stripe';
-import { adminApp, db as adminDb } from '@/lib/firebase-admin-lazy'; 
-import { getAuth } from 'firebase-admin/auth';
-import { getFirestore } from 'firebase-admin/firestore';
+// Changed import to match the new exports from firebase-admin-lazy.ts
+import { adminApp, adminDb, adminAuth } from '@/lib/firebase-admin-lazy';
+// No longer need these specific getAuth/getFirestore imports if adminAuth/adminDb are exported directly
+// import { getAuth } from 'firebase-admin/auth';
+// import { getFirestore } from 'firebase-admin/firestore';
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
   apiVersion: '2024-06-20',
@@ -13,7 +16,8 @@ async function getUserIdFromRequest(req: NextRequest): Promise<string | null> {
   if (authorization?.startsWith("Bearer ")) {
     const idToken = authorization.split("Bearer ")[1];
     try {
-      const decodedToken = await getAuth(adminApp).verifyIdToken(idToken);
+      // Use the directly imported adminAuth
+      const decodedToken = await adminAuth.verifyIdToken(idToken);
       return decodedToken.uid;
     } catch (error) {
       console.error("Error verifying auth token:", error);
@@ -30,9 +34,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    // Use Firestore Admin SDK
-    const firestore = getFirestore(adminApp);
-    const performerDocRef = firestore.collection('performers').doc(userId);
+    // Use the directly imported adminDb
+    const performerDocRef = adminDb.collection('performers').doc(userId);
     const performerSnap = await performerDocRef.get();
 
     if (!performerSnap.exists) {
