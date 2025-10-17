@@ -5,7 +5,7 @@ import { z } from 'zod';
 import { collection, serverTimestamp, addDoc } from "firebase/firestore";
 import { db } from '@/lib/firebase'; // Assuming this is your client-side Firebase Firestore instance
 // Import the specific functions from your admin lazy file
-import { getFirebaseAdminAuth } from '@/lib/firebase-admin-lazy';
+import { adminDb, adminAuth } from '@/lib/firebase-admin-lazy';
 // Removed: import { auth } from 'firebase-admin'; // No longer needed here
 // Removed: import { getAuth } from 'firebase/auth'; // This is client-side auth, not for server token verification
 
@@ -19,8 +19,7 @@ async function getUserIdFromRequest(req: NextRequest): Promise<string | null> {
     if (authorization?.startsWith("Bearer ")) {
         const idToken = authorization.split("Bearer ")[1];
         try {
-            const adminAuth = getFirebaseAdminAuth(); // Get the Admin Auth instance
-            const decodedToken = await adminAuth.verifyIdToken(idToken); // Use it to verify the token
+            const decodedToken = await adminAuth.verifyIdToken(idToken); // ✅ use adminAuth directly
             return decodedToken.uid;
         } catch (error) {
             console.error("Error verifying auth token:", error);
