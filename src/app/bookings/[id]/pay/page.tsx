@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { notFound, useRouter, useParams } from "next/navigation";
 import { doc, getDoc, updateDoc } from "firebase/firestore";
-import { db } from "@/lib/firebase"; // Client-side Firestore for read/update after payment
+import { db } from "@/lib/firebase";
 import { useAuth } from "@/contexts/auth-context";
 import type { Booking } from "@/types";
 import { Loader2, AlertTriangle, Lock } from "lucide-react";
@@ -16,7 +16,9 @@ import {
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
+// --- FIX 1: Corrected import path for loadStripe ---
 import { loadStripe } from "@stripe/stripe-js";
+// --- END FIX 1 ---
 import {
   Elements,
   PaymentElement,
@@ -49,33 +51,46 @@ function CheckoutForm({
     setIsProcessing(true);
     setErrorMessage(null);
 
+    console.log("Attempting to confirm payment...");
     const { error, paymentIntent } = await stripe.confirmPayment({
       elements,
       redirect: "if_required",
+      confirmParams: {
+        return_url: `${window.location.origin}/bookings/${booking.id}/payment-status`,
+      },
     });
+    console.log("stripe.confirmPayment returned:");
+    console.log("Error:", error);
+    console.log("PaymentIntent:", paymentIntent);
 
     if (error) {
+      console.error("Payment confirmation error:", error);
       setErrorMessage(error.message || "An unexpected error occurred.");
       setIsProcessing(false);
       return;
     }
 
+    console.log("PaymentIntent status:", paymentIntent?.status);
+
     if (paymentIntent && paymentIntent.status === "succeeded") {
       try {
-        // This update is client-side, but after Stripe confirms payment.
-        // Your security rules currently allow this:
-        // (isOwner(resource.data.customerId) && request.resource.data.keys().hasOnly(['status', 'stripePaymentIntentId']))
-        // The user is authenticated here, and isOwner will be true.
         const bookingRef = doc(db, "bookings", booking.id);
-        await updateDoc(bookingRef, { status: "confirmed" });
-        onPaymentSuccess();
+        await updateDoc(bookingRef, { status: "confirmed", stripePaymentIntentId: paymentIntent.id });
+        onPaymentSuccess(paymentIntent.client_secret!); // Pass the client_secret
       } catch (dbError) {
         console.error("Error updating booking status after Stripe success:", dbError);
         setErrorMessage(
           "Payment succeeded but updating booking failed. Please contact support."
         );
       }
+    } else if (paymentIntent && paymentIntent.status !== "succeeded") {
+        // If not succeeded immediately (e.g., processing, requires_action),
+        // we'll rely on the return_url page or webhook to update the status.
+        // The user will be redirected to payment-status page, where the final status is checked.
+        onPaymentSuccess(paymentIntent.client_secret!); // Pass the client_secret
     }
+    // No extra curly brace here. The `if/else if` block correctly closes itself.
+
 
     setIsProcessing(false);
   };
@@ -111,9 +126,20 @@ export default function PayForBookingPage() {
   const [error, setError] = useState<string | null>(null);
   const [isDemoMode, setIsDemoMode] = useState(false);
   const router = useRouter();
+  // Add a state to track if clientSecret has been fetched successfully
+  const [clientSecretFetched, setClientSecretFetched] = useState(false);
+
 
   const getBookingDetails = useCallback(
-    async (uid: string) => { // uid is passed from `user.uid`
+    async (uid: string) => {
+      // Prevent re-fetching if clientSecret is already fetched for this booking
+      if (clientSecretFetched && clientSecret) {
+        setIsLoading(false);
+        return;
+      }
+      
+      console.log("--- getBookingDetails called --- for user:", uid, "Booking ID:", params.id);
+
       const bookingId = params.id;
       if (!bookingId) {
         setError("Booking ID not found in the URL.");
@@ -123,10 +149,10 @@ export default function PayForBookingPage() {
 
       try {
         const bookingRef = doc(db, "bookings", bookingId);
-        const bookingSnap = await getDoc(bookingRef);
+        const bookingSnap = await getDoc(bookingRef); // <--- CHANGE TO THIS
 
         if (!bookingSnap.exists()) {
-          notFound();
+          notFound(); // Next.js built-in notFound()
           return;
         }
 
@@ -137,6 +163,7 @@ export default function PayForBookingPage() {
 
         if (bookingData.customerId !== uid) {
           setError("You do not have permission to view this page.");
+          setIsLoading(false); // Stop loading here as well
           return;
         }
 
@@ -144,27 +171,27 @@ export default function PayForBookingPage() {
           setError(
             `This booking cannot be paid for. Its status is: ${bookingData.status}.`
           );
+          setIsLoading(false); // Stop loading here as well
           return;
         }
 
         setBooking(bookingData);
 
-        // --- NEW/MODIFIED: Get Firebase ID token and include in fetch headers ---
-        const idToken = await user?.getIdToken(); // Get the ID token from the authenticated user
+        const idToken = await user?.getIdToken();
 
         if (!idToken) {
-          // If for some reason the user object is present but getIdToken fails (e.g., token expired/invalidated)
           throw new Error("Authentication token missing. Please log in again.");
         }
 
+        console.log("--- Fetching /api/create-payment-intent --- for booking:", bookingData.id);
         const res = await fetch("/api/create-payment-intent", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            Authorization: `Bearer ${idToken}`, // Pass the ID token for server-side verification
+            Authorization: `Bearer ${idToken}`,
           },
           body: JSON.stringify({
-            amount: bookingData.pricePerHour, // Send amount, backend will verify/use its own
+            amount: bookingData.pricePerHour,
             bookingId: bookingData.id,
           }),
         });
@@ -172,15 +199,15 @@ export default function PayForBookingPage() {
         if (!res.ok) {
           const { error: serverError } = await res.json();
           if (serverError && serverError.includes("Stripe is not configured")) {
-            setIsDemoMode(true); // Now uses the specific error message from your API
+            setIsDemoMode(true);
             setError(serverError);
           } else {
-            // Catches any other error from the API, including 401 Unauthorized, 403 Forbidden etc.
             throw new Error(serverError || "Failed to create payment intent.");
           }
         } else {
           const { clientSecret: newClientSecret } = await res.json();
           setClientSecret(newClientSecret);
+          setClientSecretFetched(true); // Mark clientSecret as fetched successfully
         }
       } catch (err: any) {
         console.error("Error processing booking payment page:", err);
@@ -189,23 +216,28 @@ export default function PayForBookingPage() {
         setIsLoading(false);
       }
     },
-    // --- NEW/MODIFIED: Add `user` to the dependency array ---
-    [params.id, user]
+    [params.id, user, clientSecretFetched, clientSecret] // Add clientSecretFetched and clientSecret to dependencies
   );
 
   useEffect(() => {
-    if (!authLoading && user) {
-      setIsLoading(true);
+    console.log("--- useEffect in PayForBookingPage running --- User:", user?.uid, "AuthLoading:", authLoading, "ClientSecretFetched:", clientSecretFetched);
+    if (!authLoading && user && !clientSecretFetched) { // Only fetch if not already fetched
+      setIsLoading(true); // Ensure loading state is true when fetching starts
       getBookingDetails(user.uid);
     } else if (!authLoading && !user) {
       setIsLoading(false);
-      // Optional: Redirect to login if a user is expected but not found
-      // router.push('/login');
     }
-  }, [user, authLoading, getBookingDetails]); // Ensure `user` is in useEffect dependencies too
+  }, [user, authLoading, getBookingDetails, clientSecretFetched]); // Add clientSecretFetched here too
 
-  const onPaymentSuccess = () => {
-    router.push("/bookings");
+  // Find this block:
+  // const onPaymentSuccess = () => {
+  //   router.push(`/bookings/${params.id}/payment-status`);
+  // };
+
+  // And replace it with this:
+  const onPaymentSuccess = (clientSecretFromResult: string) => {
+    // Use router.replace to navigate, including the clientSecret as a query parameter
+    router.replace(`/bookings/${params.id}/payment-status?payment_intent_client_secret=${clientSecretFromResult}`);
   };
 
   if (isLoading || authLoading) {

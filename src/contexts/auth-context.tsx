@@ -1,4 +1,3 @@
-
 "use client";
 
 import type { User as FirebaseUser, AuthError } from "firebase/auth";

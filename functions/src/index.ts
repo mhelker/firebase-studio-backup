@@ -222,13 +222,28 @@ export const transferOnPerformerReview = onDocumentWritten(
     if (!after || !before) return;
 
     const performerJustReviewed =
-      after.performerReviewedCustomer && !before.performerReviewedCustomer; // ✅ Use new field name
+      after.performerReviewedCustomer && !before.performerReviewedCustomer;
     if (!performerJustReviewed) return;
 
-    const { totalAmount, performerId, stripePaymentIntentId } = after;
-    if (!performerId || !stripePaymentIntentId || totalAmount === undefined) { // Check for undefined, 0 is valid
-      console.warn(`Missing data for transferOnPerformerReview. PerformerId: ${performerId}, PaymentIntentId: ${stripePaymentIntentId}, TotalAmount: ${totalAmount}`);
+    // CRITICAL CHECKS:
+    if (after.paymentStatus !== 'succeeded') { // Check for succeeded status from webhook
+        console.log(`Main payment for booking ${event.params.bookingId} is not 'succeeded' yet. Skipping transfer.`);
+        return;
+    }
+    if (after.performerPaymentTransferred) { // Prevent double transfers
+        console.log(`Performer payment already transferred for booking ${event.params.bookingId}. Skipping.`);
+        return;
+    }
+
+    // Use performerPayout, which already has the fee subtracted from your Firestore data
+    const { performerPayout, performerId, stripePaymentIntentId } = after;
+    if (!performerId || !stripePaymentIntentId || performerPayout === undefined) {
+      console.warn(`Missing data for transferOnPerformerReview. PerformerId: ${performerId}, PaymentIntentId: ${stripePaymentIntentId}, PerformerPayout: ${performerPayout}`);
       return;
+    }
+    if (performerPayout <= 0) {
+        console.warn(`PerformerPayout (${performerPayout}) is zero or negative for booking ${event.params.bookingId}. Skipping transfer.`);
+        return;
     }
 
     const performerDoc = await db.collection("performers").doc(performerId).get();
@@ -238,28 +253,33 @@ export const transferOnPerformerReview = onDocumentWritten(
       return;
     }
 
-    // Initialize Stripe INSIDE this function handler
     const stripeSecret = process.env.STRIPE_SECRET_KEY;
     if (!stripeSecret) {
       console.error("Stripe secret key is missing inside transferOnPerformerReview. This should not happen if secret is configured.");
-      return; // Or throw, depending on desired error handling
+      return;
     }
     const stripe = new Stripe(stripeSecret, {
-      apiVersion: "2024-06-20", // CRITICAL: This MUST be "2024-06-20"
-      typescript: true, // Recommended for better type safety
+      apiVersion: "2024-06-20",
+      typescript: true,
     });
 
     try {
         await stripe.transfers.create({
-            amount: Math.round(totalAmount * 100), // Ensure amount is in cents and integer
+            amount: Math.round(performerPayout * 100), // Transfer the NET amount for the performer
             currency: "usd",
             destination: accountId,
             source_transaction: stripePaymentIntentId,
         });
-        console.log(`💸 Base payment of ${totalAmount} USD transferred to performer ${performerId} for booking ${event.params.bookingId}`);
+        console.log(`💸 Net payment of ${performerPayout} USD transferred to performer ${performerId} for booking ${event.params.bookingId}`);
+
+        // IMPORTANT: Update Firestore after successful transfer
+        await db.collection('bookings').doc(event.params.bookingId).update({
+            performerPaymentTransferred: true,
+            paymentStatus: 'transferred',
+        });
+
     } catch (error) {
-        console.error(`❌ Error transferring base payment for booking ${event.params.bookingId} to performer ${performerId}:`, error);
-        // Optionally update booking status to reflect transfer failure if you have one
+        console.error(`❌ Error transferring net payment for booking ${event.params.bookingId} to performer ${performerId}:`, error);
     }
   }
 );
@@ -273,15 +293,25 @@ export const transferTipOnCustomerReview = onDocumentWritten(
     if (!after || !before) return;
 
     const customerJustReviewed =
-      after.customerReviewedPerformer && !before.customerReviewedPerformer; // ✅ Use new field name
+      after.customerReviewedPerformer && !before.customerReviewedPerformer;
     if (!customerJustReviewed) return;
 
-    const { tipAmount, performerId, stripePaymentIntentId } = after;
-    if (tipAmount === undefined || tipAmount <= 0 || !performerId || !stripePaymentIntentId) {
+    // CRITICAL CHECKS:
+    if (after.tipStatus !== 'succeeded') { // Check for succeeded status from webhook
+        console.log(`Tip for booking ${event.params.bookingId} is not 'succeeded' yet. Skipping tip transfer.`);
+        return;
+    }
+    if (after.tipTransferred) { // Prevent double transfers
+        console.log(`Tip already transferred for booking ${event.params.bookingId}. Skipping.`);
+        return;
+    }
+
+    const { tipAmount, performerId, tipPaymentIntentId } = after;
+    if (tipAmount === undefined || tipAmount <= 0 || !performerId || !tipPaymentIntentId) {
       if (tipAmount === undefined || tipAmount <= 0) {
           console.log(`No valid tip amount (${tipAmount}) for transfer. Skipping tip transfer for booking ${event.params.bookingId}.`);
       } else {
-          console.warn(`Missing data for transferTipOnCustomerReview. PerformerId: ${performerId}, PaymentIntentId: ${stripePaymentIntentId}`);
+          console.warn(`Missing data for transferTipOnCustomerReview. PerformerId: ${performerId}, TipPaymentIntentId: ${tipPaymentIntentId}`);
       }
       return;
     }
@@ -293,28 +323,33 @@ export const transferTipOnCustomerReview = onDocumentWritten(
       return;
     }
 
-    // Initialize Stripe INSIDE this function handler
     const stripeSecret = process.env.STRIPE_SECRET_KEY;
     if (!stripeSecret) {
       console.error("Stripe secret key is missing inside transferTipOnCustomerReview. This should not happen if secret is configured.");
-      return; // Or throw, depending on desired error handling
+      return;
     }
     const stripe = new Stripe(stripeSecret, {
-      apiVersion: "2024-06-20", // CRITICAL: This MUST be "2024-06-20"
-      typescript: true, // Recommended for better type safety
+      apiVersion: "2024-06-20",
+      typescript: true,
     });
 
     try {
         await stripe.transfers.create({
-            amount: Math.round(tipAmount * 100), // Ensure amount is in cents and integer
+            amount: Math.round(tipAmount * 100),
             currency: "usd",
             destination: accountId,
-            source_transaction: stripePaymentIntentId,
+            source_transaction: tipPaymentIntentId,
         });
         console.log(`💸 Tip of ${tipAmount} USD transferred to performer ${performerId} for booking ${event.params.bookingId}`);
+
+        // IMPORTANT: Update Firestore after successful transfer
+        await db.collection('bookings').doc(event.params.bookingId).update({
+            tipTransferred: true,
+            tipStatus: 'transferred',
+        });
+
     } catch (error) {
         console.error(`❌ Error transferring tip for booking ${event.params.bookingId} to performer ${performerId}:`, error);
-        // Optionally update booking status to reflect transfer failure if you have one
     }
   }
 );

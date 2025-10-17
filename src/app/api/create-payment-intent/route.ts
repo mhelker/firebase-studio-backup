@@ -1,100 +1,111 @@
 // app/api/create-payment-intent/route.ts
-import { NextResponse } from 'next/server';
-import Stripe from 'stripe';
-// --- IMPORTANT CHANGE: Import 'db' from firebase-admin.ts ---
-import { db as adminDb } from '@/lib/firebase-admin'; // Alias it to adminDb for clarity
-// --- And if you're doing server-side auth, import adminAuth ---
-import { auth as adminAuth } from '@/lib/firebase-admin';
-
-// No need for 'doc' and 'updateDoc' from 'firebase/firestore' anymore
-// The methods are directly available on the adminDb instance.
+import { NextResponse } from "next/server";
+import Stripe from "stripe";
+import { db as adminDb } from "@/lib/firebase-admin";
+import { auth as adminAuth } from "@/lib/firebase-admin";
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
-  apiVersion: '2024-06-20',
+  apiVersion: "2024-06-20",
 });
 
 export async function POST(request: Request) {
-  console.log('Stripe Secret Key present:', !!process.env.STRIPE_SECRET_KEY);
-
-  if (!process.env.STRIPE_SECRET_KEY || process.env.STRIPE_SECRET_KEY === 'your_stripe_secret_key_here') {
-    console.warn("Stripe keys not found. Running create-payment-intent in demo mode.");
-    // Changed status to 400 as it's a configuration issue on the server, not necessarily an internal server error
-    return NextResponse.json({ error: 'Stripe is not configured on the server. Please set STRIPE_SECRET_KEY.' }, { status: 400 });
-  }
-
   try {
     const { amount, bookingId } = await request.json();
 
     if (!amount || amount <= 0) {
-      return NextResponse.json({ error: 'Invalid amount provided.' }, { status: 400 });
+      return NextResponse.json({ error: "Invalid amount provided." }, { status: 400 });
     }
+
     if (!bookingId) {
-      return NextResponse.json({ error: 'Booking ID is required.' }, { status: 400 });
+      return NextResponse.json({ error: "Booking ID is required." }, { status: 400 });
     }
 
-    // --- Server-side Authorization (Highly Recommended) ---
-    // Get the ID token from the Authorization header
-    const authorization = request.headers.get('authorization');
-    if (!authorization || !authorization.startsWith('Bearer ')) {
-      return NextResponse.json({ error: 'Unauthorized: No token provided in Authorization header.' }, { status: 401 });
-    }
-    const idToken = authorization.split(' ')[1];
-
-    let uid: string;
-    try {
-      const decodedToken = await adminAuth.verifyIdToken(idToken);
-      uid = decodedToken.uid;
-    } catch (error) {
-      console.error('Error verifying ID token in API:', error);
-      return NextResponse.json({ error: 'Unauthorized: Invalid or expired authentication token.' }, { status: 401 });
+    const authorization = request.headers.get("authorization");
+    if (!authorization?.startsWith("Bearer ")) {
+      return NextResponse.json({ error: "Unauthorized: No token provided." }, { status: 401 });
     }
 
-    // Fetch the booking using the Admin SDK's Firestore instance to verify ownership
-    const bookingRef = adminDb.collection('bookings').doc(bookingId);
+    const idToken = authorization.split(" ")[1];
+    const decodedToken = await adminAuth.verifyIdToken(idToken);
+    const uid = decodedToken.uid;
+
+    // ✅ Fetch booking and performer data
+    const bookingRef = adminDb.collection("bookings").doc(bookingId);
     const bookingSnap = await bookingRef.get();
+    if (!bookingSnap.exists) return NextResponse.json({ error: "Booking not found." }, { status: 404 });
 
-    if (!bookingSnap.exists) {
-      return NextResponse.json({ error: 'Booking not found.' }, { status: 404 });
-    }
+    const bookingData = bookingSnap.data() as {
+      customerId: string;
+      pricePerHour: number;
+      performerId: string;
+    };
 
-    const bookingData = bookingSnap.data() as { customerId: string; pricePerHour: number };
-
-    // Verify that the user making the request is the customer for this booking
     if (bookingData.customerId !== uid) {
-      return NextResponse.json({ error: 'Forbidden: You do not have permission to pay for this booking.' }, { status: 403 });
+      return NextResponse.json({ error: "Forbidden: You are not the customer for this booking." }, { status: 403 });
     }
 
-    // Optional: Re-verify amount (the client should send the correct booking ID, and the backend should get the amount from the DB)
-    // If you always want to use the DB's amount:
-    // const amountInCents = Math.round(bookingData.pricePerHour * 100);
-    // If you trust the client to send the correct amount for now:
-    const amountInCents = Math.round(amount * 100);
+    const performerDoc = await adminDb.collection("performers").doc(bookingData.performerId).get();
+const performerStripeAccountId = performerDoc.data()?.stripeAccountId;
 
+// Debug log
+console.log("Performer Stripe Account ID:", performerStripeAccountId);
 
-    // Create Stripe PaymentIntent
+// ✅ Check if performer has a Stripe account
+if (!performerStripeAccountId || typeof performerStripeAccountId !== "string") {
+  return NextResponse.json({ error: "Performer has no Stripe account connected." }, { status: 400 });
+}
+
+    // --- START OF CRITICAL CHANGES FOR PLATFORM FEE ---
+    const PLATFORM_FEE_PERCENTAGE = 0.15; // 15% platform fee
+    const totalAmountFromCustomer = amount; // The `amount` received in the request is the customer's total
+    const applicationFeeAmount = Math.round(totalAmountFromCustomer * PLATFORM_FEE_PERCENTAGE * 100); // Calculate fee in cents
+
+    // The amount transferred to the performer (destination)
+    const amountToPerformerInCents = Math.round((totalAmountFromCustomer - (totalAmountFromCustomer * PLATFORM_FEE_PERCENTAGE)) * 100);
+
+    // Ensure amountToPerformerInCents is not negative or zero
+    if (amountToPerformerInCents <= 0) {
+      return NextResponse.json({ error: "Calculated amount to transfer to performer is zero or negative after fee." }, { status: 400 });
+    }
+
+    // --- END OF CRITICAL CHANGES ---
+
+    // --- CRITICAL ADDITION: Idempotency Key ---
+    const idempotencyKey = `${bookingId}_initial_payment`; // Generate a unique key for this booking's initial payment
+    // --- END CRITICAL ADDITION ---
+
+    // ✅ Create PaymentIntent as a destination charge
     const paymentIntent = await stripe.paymentIntents.create({
-      amount: amountInCents,
-      currency: 'usd',
+      amount: Math.round(totalAmountFromCustomer * 100), // Total amount customer pays (THIS IS THE CORRECT LINE)
+      currency: "usd",
       automatic_payment_methods: { enabled: true },
       description: `Payment for booking #${bookingId}`,
-      metadata: { bookingId, customerId: uid, type: 'booking_payment' }, // Add customerId to metadata
+      metadata: {
+        bookingId,
+        customerId: uid,
+        performerId: bookingData.performerId,
+        type: "booking_payment",
+      },
+      transfer_data: {
+        destination: performerStripeAccountId,
+        // When using application_fee_amount, Stripe automatically transfers
+        // (total_amount - application_fee_amount) to the destination.
+        // So we don't need a separate `transfer_data.amount` if application_fee_amount is used.
+      },
+      application_fee_amount: applicationFeeAmount, // Set the calculated fee here!
+    }, {
+      idempotencyKey: idempotencyKey,
     });
 
-    // Save PaymentIntent ID to Firestore booking document using Admin SDK Firestore
-    // This `updateDoc` call now uses the `adminDb` instance, bypassing security rules.
-    await bookingRef.update({ // Use bookingRef which is already from adminDb
+    await bookingRef.update({
       stripePaymentIntentId: paymentIntent.id,
-      // You might also want to update the status to 'payment_pending' or similar here
-      // status: 'payment_pending',
+      paymentStatus: "payment_pending", // This will be updated later by webhook/confirmation
     });
 
     console.log(`✅ PaymentIntent created for booking ${bookingId}: ${paymentIntent.id}`);
-
     return NextResponse.json({ clientSecret: paymentIntent.client_secret });
   } catch (error: any) {
-    console.error('Error creating PaymentIntent:', error);
-    // Be more specific with error messages to avoid leaking sensitive info
-    const errorMessage = error.message || 'An unexpected error occurred while processing payment.';
-    return NextResponse.json({ error: `Error creating PaymentIntent: ${errorMessage}` }, { status: 500 });
+    console.error("Error creating PaymentIntent:", error);
+    return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
