@@ -32,3 +32,6 @@ const adminAuth = getAuth(adminApp);   // Rename to adminAuth for clarity when i
 
 // Export all necessary components directly
 export { adminApp, adminDb, adminAuth, FieldValue, Timestamp };
+export function getFirebaseAdminFirestore() {
+  return adminDb;
+}
