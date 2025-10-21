@@ -342,7 +342,9 @@ export default function DashboardPage() {
             <DollarSign className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">${totalEarnings.toFixed(2)}</div>
+            <div className="text-2xl font-bold">
+  ${Number(totalEarnings || 0).toFixed(2)}
+</div>
             <p className="text-xs text-muted-foreground">From gigs & tips (after platform fees)</p>
           </CardContent>
         </Card>
@@ -719,141 +721,148 @@ export default function DashboardPage() {
 
       {/* Past Bookings */}
       <Card className="shadow-lg">
-        <CardHeader>
-          <CardTitle className="flex items-center">
-            <History className="w-6 h-6 mr-2 text-muted-foreground" /> Booking History
-          </CardTitle>
-          <CardDescription>Your past performances and cancelled bookings.</CardDescription>
-        </CardHeader>
-        <CardContent>
-          {pastToShow.length === 0 ? (
-            <div className="text-center py-10">
-              <PackageOpen className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
-              <p className="text-muted-foreground">No past bookings found.</p>
-            </div>
-          ) : (
-            <div className="space-y-4">
-              {pastToShow.map(booking => {
-                const tipAmount = booking.tipAmount || 0;
-                const totalPayout = (booking.performerPayout || 0) + tipAmount;
-                const status = booking.status || "completed";
-                return (
-                  <Card key={booking.id} className="bg-card/80 opacity-80">
-                    <CardHeader className="pb-2">
-                      <CardTitle className="text-lg font-headline">
-                        Booking for {booking.customerName || booking.userName || "Customer"}
-                      </CardTitle>
-                      <CardDescription className="text-xs">
-                        Status:{" "}
-                        <span
-                          className={`font-semibold capitalize ml-1 ${
-                            status === "cancelled"
-                              ? "text-destructive"
-                              : status === "completed"
-                              ? "text-green-600"
-                              : "text-primary"
-                          }`}
-                        >
-                          {" "}
-                          {status.replace("_", " ")}{" "}
-                        </span>
-                      </CardDescription>
-                    </CardHeader>
-                    <CardContent className="text-sm space-y-1">
-                      <p>
-                        {" "}
-                        <strong>Date:</strong>{" "}
-                        {booking.date ? format(booking.date.toDate(), "PPP") : "N/A"}
-                      </p>
-                      <p>
-                        {" "}
-                        <strong>Time:</strong>{" "}
-                        {booking.startTime && booking.finishTime
-                          ? `${formatBookingTime(booking.date, booking.startTime)} to ${formatBookingTime(
-                              booking.date,
-                              booking.finishTime
-                            )}`
-                          : "N/A"}
-                      </p>
-                      <p>
-                        <strong>Location:</strong> {booking.location}
-                      </p>
-                      {booking.isVirtual && (
-                        <Badge variant="outline" className="w-fit mt-1 bg-background text-xs">
-                          <Video className="w-3 h-3 mr-1.5" /> Virtual
-                        </Badge>
-                      )}
-                      {status === "completed" && (
-                        <div className="text-sm bg-secondary/20 p-3 rounded-md mt-2">
-                          <div className="flex justify-between">
-                            <span>Base Payout:</span>{" "}
-                            <span>${(booking.performerPayout || 0).toFixed(2)}</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span>Tip Received:</span> <span>${tipAmount.toFixed(2)}</span>
-                          </div>
-                          <div className="flex justify-between font-bold mt-1 pt-1 border-t">
-                            <span>Total Payout:</span> <span>${totalPayout.toFixed(2)}</span>
-                          </div>
-                        </div>
-                      )}
-                    </CardContent>
-                    {status === "completed" && (
-                      <CardFooter>
-                        {booking.performerReviewSubmitted ? (
-                          <div className="text-sm text-green-600 font-semibold p-2 bg-green-50 rounded-md border border-green-200">
-                            You have reviewed this booking.
-                          </div>
-                        ) : (
-                          <Dialog
-                            open={reviewingBookingId === booking.id}
-                            onOpenChange={isOpen => setReviewingBookingId(isOpen ? booking.id : null)}
-                          >
-                            <DialogTrigger asChild>
-                              <Button variant="outline" size="sm">
-                                <StarHalf className="w-4 h-4 mr-2" /> Review Customer
-                              </Button>
-                            </DialogTrigger>
-                            <DialogContent>
-                              <DialogHeader>
-                                <DialogTitle>Review this Customer</DialogTitle>
-                                <DialogDescription>
-                                  Your feedback helps maintain a respectful community. It will not
-                                  be visible to the customer until they have also reviewed you, or
-                                  after 14 days.
-                                </DialogDescription>
-                              </DialogHeader>
-                              <PerformerReviewCustomerForm
-                            bookingId={booking.id}
-                            customerIdBeingReviewed={booking.customerId} // Renamed prop
-                            performerId={user.uid}
-                            onReviewSubmitted={async () => {
-                              await updateBookingStatus(booking.id, "completed"); // ✅ mark completed
-                              setReviewingBookingId(null);
-                              fetchDashboardData();
-                            }}
-                          />
-                            </DialogContent>
-                          </Dialog>
-                        )}
-                      </CardFooter>
-                    )}
-                  </Card>
-                );
-              })}
-            </div>
-          )}
-        </CardContent>
-      </Card>
+  <CardHeader>
+    <CardTitle className="flex items-center">
+      <History className="w-6 h-6 mr-2 text-muted-foreground" /> Booking History
+    </CardTitle>
+    <CardDescription>Your past performances and cancelled bookings.</CardDescription>
+  </CardHeader>
+  <CardContent>
+    {pastToShow.length === 0 ? (
+      <div className="text-center py-10">
+        <PackageOpen className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
+        <p className="text-muted-foreground">No past bookings found.</p>
+      </div>
+    ) : (
+      <div className="space-y-4">
+        {pastToShow.map(booking => {
+          const tipAmount = Number(booking.tipAmount) || 0;
+          const payout = Number(booking.performerPayout) || 0;
+          const totalPayout = payout + tipAmount;
+          const status = booking.status || "completed";
 
-      {past.length > 3 && (
-        <div className="text-right mt-2">
-          <Link href="/dashboard/past" className="text-sm text-primary underline">
-            {" "}
-            View All Past Bookings{" "}
-          </Link>
-        </div>
-      )}
-    </div>
-  );
-}
+          return (
+            <Card key={booking.id} className="bg-card/80 opacity-80">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-lg font-headline">
+                  Booking for {booking.customerName || booking.userName || "Customer"}
+                </CardTitle>
+                <CardDescription className="text-xs">
+                  Status:{" "}
+                  <span
+                    className={`font-semibold capitalize ml-1 ${
+                      status === "cancelled"
+                        ? "text-destructive"
+                        : status === "completed"
+                        ? "text-green-600"
+                        : "text-primary"
+                    }`}
+                  >
+                    {status.replace("_", " ")}
+                  </span>
+                </CardDescription>
+              </CardHeader>
+
+              <CardContent className="text-sm space-y-1">
+                <p>
+                  <strong>Date:</strong>{" "}
+                  {booking.date ? format(booking.date.toDate(), "PPP") : "N/A"}
+                </p>
+                <p>
+                  <strong>Time:</strong>{" "}
+                  {booking.startTime && booking.finishTime
+                    ? `${formatBookingTime(booking.date, booking.startTime)} to ${formatBookingTime(
+                        booking.date,
+                        booking.finishTime
+                      )}`
+                    : "N/A"}
+                </p>
+                <p>
+                  <strong>Location:</strong> {booking.location}
+                </p>
+
+                {booking.isVirtual && (
+                  <Badge variant="outline" className="w-fit mt-1 bg-background text-xs">
+                    <Video className="w-3 h-3 mr-1.5" /> Virtual
+                  </Badge>
+                )}
+
+                {status === "completed" && (
+                  <div className="text-sm bg-secondary/20 p-3 rounded-md mt-2">
+                    <div className="flex justify-between">
+                      <span>Base Payout:</span>{" "}
+                      <span>${payout.toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Tip Received:</span>{" "}
+                      <span>${tipAmount.toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between font-bold mt-1 pt-1 border-t">
+                      <span>Total Payout:</span>{" "}
+                      <span>${totalPayout.toFixed(2)}</span>
+                    </div>
+                  </div>
+                )}
+              </CardContent>
+
+              {status === "completed" && (
+                <CardFooter>
+                  {booking.performerReviewSubmitted ? (
+                    <div className="text-sm text-green-600 font-semibold p-2 bg-green-50 rounded-md border border-green-200">
+                      You have reviewed this booking.
+                    </div>
+                  ) : (
+                    <Dialog
+                      open={reviewingBookingId === booking.id}
+                      onOpenChange={isOpen =>
+                        setReviewingBookingId(isOpen ? booking.id : null)
+                      }
+                    >
+                      <DialogTrigger asChild>
+                        <Button variant="outline" size="sm">
+                          <StarHalf className="w-4 h-4 mr-2" /> Review Customer
+                        </Button>
+                      </DialogTrigger>
+                      <DialogContent>
+                        <DialogHeader>
+                          <DialogTitle>Review this Customer</DialogTitle>
+                          <DialogDescription>
+                            Your feedback helps maintain a respectful community. It will not
+                            be visible to the customer until they have also reviewed you, or
+                            after 14 days.
+                          </DialogDescription>
+                        </DialogHeader>
+                        <PerformerReviewCustomerForm
+                          bookingId={booking.id}
+                          customerIdBeingReviewed={booking.customerId}
+                          performerId={user.uid}
+                          onReviewSubmitted={async () => {
+                            await updateBookingStatus(booking.id, "completed");
+                            setReviewingBookingId(null);
+                            fetchDashboardData();
+                          }}
+                        />
+                      </DialogContent>
+                    </Dialog>
+                  )}
+                </CardFooter>
+              )}
+            </Card>
+          );
+        })}
+      </div>
+    )}
+  </CardContent>
+</Card>
+
+{past.length > 3 && (
+  <div className="text-right mt-2">
+    <Link href="/dashboard/past" className="text-sm text-primary underline">
+      View All Past Bookings
+    </Link>
+  </div>
+)}
+
+    </div>  // closes the main container div
+  );       // closes the return statement
+}          // closes the DashboardPage function

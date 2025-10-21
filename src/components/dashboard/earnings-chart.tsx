@@ -80,9 +80,16 @@ export function EarningsChart({ bookings }: EarningsChartProps) {
                     tickFormatter={(value) => `$${value}`}
                 />
                 <ChartTooltip
-                    cursor={false}
-                    content={<ChartTooltipContent labelFormatter={(label, payload) => `${label}: $${payload[0]?.value.toFixed(2)}`} />}
-                />
+  cursor={false}
+  content={
+    <ChartTooltipContent
+      labelFormatter={(label, payload) => {
+        const val = Number(payload?.[0]?.value ?? 0);
+        return `${label}: $${val.toFixed(2)}`;
+      }}
+    />
+  }
+/>
                 <Bar
                     dataKey="earnings"
                     fill="var(--color-earnings)"
