@@ -1,4 +1,3 @@
-// app/api/create-payment-intent/route.ts
 import { NextResponse } from "next/server";
 import Stripe from "stripe";
 import { db as adminDb } from "@/lib/firebase-admin";
@@ -45,61 +44,49 @@ export async function POST(request: Request) {
     }
 
     const performerDoc = await adminDb.collection("performers").doc(bookingData.performerId).get();
-const performerStripeAccountId = performerDoc.data()?.stripeAccountId;
+    const performerStripeAccountId = performerDoc.data()?.stripeAccountId;
 
-// Debug log
-console.log("Performer Stripe Account ID:", performerStripeAccountId);
+    console.log("Performer Stripe Account ID:", performerStripeAccountId);
 
-// ✅ Check if performer has a Stripe account
-if (!performerStripeAccountId || typeof performerStripeAccountId !== "string") {
-  return NextResponse.json({ error: "Performer has no Stripe account connected." }, { status: 400 });
-}
-
-    // --- START OF CRITICAL CHANGES FOR PLATFORM FEE ---
-    const PLATFORM_FEE_PERCENTAGE = 0.15; // 15% platform fee
-    const totalAmountFromCustomer = amount; // The `amount` received in the request is the customer's total
-    const applicationFeeAmount = Math.round(totalAmountFromCustomer * PLATFORM_FEE_PERCENTAGE * 100); // Calculate fee in cents
-
-    // The amount transferred to the performer (destination)
-    const amountToPerformerInCents = Math.round((totalAmountFromCustomer - (totalAmountFromCustomer * PLATFORM_FEE_PERCENTAGE)) * 100);
-
-    // Ensure amountToPerformerInCents is not negative or zero
-    if (amountToPerformerInCents <= 0) {
-      return NextResponse.json({ error: "Calculated amount to transfer to performer is zero or negative after fee." }, { status: 400 });
+    if (!performerStripeAccountId || typeof performerStripeAccountId !== "string") {
+      return NextResponse.json({ error: "Performer has no Stripe account connected." }, { status: 400 });
     }
 
-    // --- END OF CRITICAL CHANGES ---
+    // --- PLATFORM FEE (still used later when releasing) ---
+    const PLATFORM_FEE_PERCENTAGE = 0.15;
+    const totalAmountFromCustomer = amount;
+    const applicationFeeAmount = Math.round(totalAmountFromCustomer * PLATFORM_FEE_PERCENTAGE * 100);
 
-    // --- CRITICAL ADDITION: Idempotency Key ---
-    const idempotencyKey = `${bookingId}_initial_payment`; // Generate a unique key for this booking's initial payment
-    // --- END CRITICAL ADDITION ---
-
-    // ✅ Create PaymentIntent as a destination charge
-    const paymentIntent = await stripe.paymentIntents.create({
-      amount: Math.round(totalAmountFromCustomer * 100), // Total amount customer pays (THIS IS THE CORRECT LINE)
-      currency: "usd",
-      automatic_payment_methods: { enabled: true },
-      description: `Payment for booking #${bookingId}`,
-      metadata: {
-        bookingId,
-        customerId: uid,
-        performerId: bookingData.performerId,
-        type: "booking_payment",
+    // --- CREATE PAYMENT INTENT (HOLD IN PLATFORM) ---
+    const idempotencyKey = `${bookingId}_initial_payment`;
+    const paymentIntent = await stripe.paymentIntents.create(
+      {
+        amount: Math.round(totalAmountFromCustomer * 100),
+        currency: "usd",
+        automatic_payment_methods: { enabled: true },
+        description: `Payment for booking #${bookingId}`,
+        metadata: {
+          bookingId,
+          customerId: uid,
+          performerId: bookingData.performerId,
+          type: "initial_payment",
+        },
+        // ⚠️ No transfer_data here – funds stay in platform until performer reviews
       },
-      transfer_data: {
-        destination: performerStripeAccountId,
-        // When using application_fee_amount, Stripe automatically transfers
-        // (total_amount - application_fee_amount) to the destination.
-        // So we don't need a separate `transfer_data.amount` if application_fee_amount is used.
-      },
-      application_fee_amount: applicationFeeAmount, // Set the calculated fee here!
-    }, {
-      idempotencyKey: idempotencyKey,
-    });
+      { idempotencyKey }
+    );
 
     await bookingRef.update({
       stripePaymentIntentId: paymentIntent.id,
-      paymentStatus: "payment_pending", // This will be updated later by webhook/confirmation
+      paymentStatus: "pending_release", // funds held in platform
+      platformFee: applicationFeeAmount / 100,
+      performerStripeAccountId,
+
+      // 👇 New payout tracking fields
+      initialPayoutReleased: false,
+      tipPayoutReleased: false,
+      payoutReleasedAt: null,
+      tipPayoutReleasedAt: null,
     });
 
     console.log(`✅ PaymentIntent created for booking ${bookingId}: ${paymentIntent.id}`);

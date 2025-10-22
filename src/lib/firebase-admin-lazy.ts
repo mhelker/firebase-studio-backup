@@ -35,3 +35,7 @@ export { adminApp, adminDb, adminAuth, FieldValue, Timestamp };
 export function getFirebaseAdminFirestore() {
   return adminDb;
 }
+
+export function getFirebaseAdminAuth(): Auth {
+  return adminAuth;
+}

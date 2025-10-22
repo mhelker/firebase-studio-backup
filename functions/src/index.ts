@@ -214,72 +214,66 @@ export const updatePerformerRating = onDocumentWritten(
 );
 
 // ---------- 5. Transfer booking payment on performer review ----------
-export const transferOnPerformerReview = onDocumentWritten(
+export const transferOnPerformerReview = onDocumentUpdated(
   { document: "bookings/{bookingId}", region: "us-west2", secrets: ["STRIPE_SECRET_KEY"] },
   async (event) => {
+    const bookingId = event.params.bookingId;
     const after = event.data?.after?.data();
     const before = event.data?.before?.data();
     if (!after || !before) return;
 
-    const performerJustReviewed =
-      after.performerReviewedCustomer && !before.performerReviewedCustomer;
-    if (!performerJustReviewed) return;
+    const performerJustReviewed = !before.performerReviewedCustomer && after.performerReviewedCustomer;
+    const paymentReady = after.paymentStatus === "succeeded" || after.paymentStatus === "pending_release";
 
-    // CRITICAL CHECKS:
-    if (after.paymentStatus !== 'succeeded') { // Check for succeeded status from webhook
-        console.log(`Main payment for booking ${event.params.bookingId} is not 'succeeded' yet. Skipping transfer.`);
-        return;
-    }
-    if (after.performerPaymentTransferred) { // Prevent double transfers
-        console.log(`Performer payment already transferred for booking ${event.params.bookingId}. Skipping.`);
-        return;
-    }
-
-    // Use performerPayout, which already has the fee subtracted from your Firestore data
-    const { performerPayout, performerId, stripePaymentIntentId } = after;
-    if (!performerId || !stripePaymentIntentId || performerPayout === undefined) {
-      console.warn(`Missing data for transferOnPerformerReview. PerformerId: ${performerId}, PaymentIntentId: ${stripePaymentIntentId}, PerformerPayout: ${performerPayout}`);
+    if (!performerJustReviewed || !paymentReady) {
+      console.log(`Skipping transfer for booking ${bookingId}. performerJustReviewed: ${performerJustReviewed}, paymentReady: ${paymentReady}`);
       return;
     }
-    if (performerPayout <= 0) {
-        console.warn(`PerformerPayout (${performerPayout}) is zero or negative for booking ${event.params.bookingId}. Skipping transfer.`);
-        return;
-    }
-
-    const performerDoc = await db.collection("performers").doc(performerId).get();
-    const accountId = performerDoc.data()?.stripeAccountId;
-    if (!accountId) {
-      console.error(`Stripe account ID not found for performer ${performerId}. Cannot transfer funds.`);
-      return;
-    }
-
-    const stripeSecret = process.env.STRIPE_SECRET_KEY;
-    if (!stripeSecret) {
-      console.error("Stripe secret key is missing inside transferOnPerformerReview. This should not happen if secret is configured.");
-      return;
-    }
-    const stripe = new Stripe(stripeSecret, {
-      apiVersion: "2024-06-20",
-      typescript: true,
-    });
 
     try {
-        await stripe.transfers.create({
-            amount: Math.round(performerPayout * 100), // Transfer the NET amount for the performer
-            currency: "usd",
-            destination: accountId,
-            source_transaction: stripePaymentIntentId,
-        });
-        console.log(`💸 Net payment of ${performerPayout} USD transferred to performer ${performerId} for booking ${event.params.bookingId}`);
+      await db.runTransaction(async (tx) => {
+        const bookingRef = db.collection("bookings").doc(bookingId);
+        const bookingSnap = await tx.get(bookingRef);
+        const bookingData = bookingSnap.data();
+        if (!bookingData) throw new Error("Booking data missing");
 
-        // IMPORTANT: Update Firestore after successful transfer
-        await db.collection('bookings').doc(event.params.bookingId).update({
-            performerPaymentTransferred: true,
-            paymentStatus: 'transferred',
+        // ⚠️ Check again inside transaction
+        if (bookingData.performerPaymentTransferred) {
+          console.log(`Transfer already done for booking ${bookingId}. Exiting.`);
+          return;
+        }
+
+        // Compute payout
+        let payout = bookingData.performerPayout;
+        if (!payout || payout <= 0) payout = (bookingData.pricePerHour || 0) - (bookingData.platformFee || 0);
+        if (payout <= 0) throw new Error("Invalid payout");
+
+        const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, { apiVersion: "2024-06-20", typescript: true });
+        const paymentIntent = await stripe.paymentIntents.retrieve(bookingData.stripePaymentIntentId);
+        const chargeId = paymentIntent.latest_charge as string;
+        if (!chargeId) throw new Error("No charge found");
+
+        // 🟢 Mark as transferred in Firestore BEFORE creating the Stripe transfer
+        tx.update(bookingRef, { performerPaymentTransferred: true });
+
+        const transfer = await stripe.transfers.create({
+          amount: Math.round(payout * 100),
+          currency: "usd",
+          destination: bookingData.performerStripeAccountId,
+          source_transaction: chargeId,
+        }, { idempotencyKey: `transfer-${bookingId}` });
+
+        // Update transferId and status
+        tx.update(bookingRef, {
+          performerTransferId: transfer.id,
+          paymentStatus: "transferred",
+          performerPayout: payout
         });
 
-    } catch (error) {
-        console.error(`❌ Error transferring net payment for booking ${event.params.bookingId} to performer ${performerId}:`, error);
+        console.log(`✅ Transferred $${payout} to performer ${bookingData.performerId} (transfer ID: ${transfer.id})`);
+      });
+    } catch (err) {
+      console.error(`❌ Error transferring payment for booking ${bookingId}:`, err);
     }
   }
 );

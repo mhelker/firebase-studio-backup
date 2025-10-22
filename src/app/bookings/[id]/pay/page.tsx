@@ -44,56 +44,57 @@ function CheckoutForm({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const handleSubmit = async (event: React.FormEvent) => {
-    event.preventDefault();
+  event.preventDefault();
 
-    if (!stripe || !elements) return;
+  if (!stripe || !elements) return;
 
-    setIsProcessing(true);
-    setErrorMessage(null);
+  // 🔹 Add this check at the top
+  if (booking.stripePaymentIntentId && booking.status !== "awaiting_payment") {
+    console.warn("PaymentIntent already confirmed or booking not awaiting payment.");
+    return;
+  }
 
-    console.log("Attempting to confirm payment...");
-    const { error, paymentIntent } = await stripe.confirmPayment({
-      elements,
-      redirect: "if_required",
-      confirmParams: {
-        return_url: `${window.location.origin}/bookings/${booking.id}/payment-status`,
-      },
-    });
-    console.log("stripe.confirmPayment returned:");
-    console.log("Error:", error);
-    console.log("PaymentIntent:", paymentIntent);
+  setIsProcessing(true);
+  setErrorMessage(null);
 
-    if (error) {
-      console.error("Payment confirmation error:", error);
-      setErrorMessage(error.message || "An unexpected error occurred.");
-      setIsProcessing(false);
-      return;
-    }
+  console.log("Attempting to confirm payment...");
+  const result = await stripe.confirmPayment({
+    elements,
+    redirect: "if_required",
+    confirmParams: {
+      return_url: `${window.location.origin}/bookings/${booking.id}/payment-status`,
+    },
+  });
 
-    console.log("PaymentIntent status:", paymentIntent?.status);
+  console.log("Stripe confirmPayment result:", result);
 
-    if (paymentIntent && paymentIntent.status === "succeeded") {
-      try {
-        const bookingRef = doc(db, "bookings", booking.id);
-        await updateDoc(bookingRef, { status: "confirmed", stripePaymentIntentId: paymentIntent.id });
-        onPaymentSuccess(paymentIntent.client_secret!); // Pass the client_secret
-      } catch (dbError) {
-        console.error("Error updating booking status after Stripe success:", dbError);
-        setErrorMessage(
-          "Payment succeeded but updating booking failed. Please contact support."
-        );
-      }
-    } else if (paymentIntent && paymentIntent.status !== "succeeded") {
-        // If not succeeded immediately (e.g., processing, requires_action),
-        // we'll rely on the return_url page or webhook to update the status.
-        // The user will be redirected to payment-status page, where the final status is checked.
-        onPaymentSuccess(paymentIntent.client_secret!); // Pass the client_secret
-    }
-    // No extra curly brace here. The `if/else if` block correctly closes itself.
-
-
+  if (result.error) {
+    console.error("Payment confirmation error:", result.error);
+    setErrorMessage(result.error.message || "An unexpected error occurred.");
     setIsProcessing(false);
-  };
+    return;
+  }
+
+  const paymentIntent = result.paymentIntent;
+  console.log("PaymentIntent status:", paymentIntent?.status);
+
+  if (paymentIntent && paymentIntent.status === "succeeded") {
+    try {
+      const bookingRef = doc(db, "bookings", booking.id);
+      await updateDoc(bookingRef, { status: "confirmed", stripePaymentIntentId: paymentIntent.id });
+      onPaymentSuccess(paymentIntent.client_secret!);
+    } catch (dbError) {
+      console.error("Error updating booking status after Stripe success:", dbError);
+      setErrorMessage(
+        "Payment succeeded but updating booking failed. Please contact support."
+      );
+    }
+  } else if (paymentIntent && paymentIntent.status !== "succeeded") {
+    onPaymentSuccess(paymentIntent.client_secret!);
+  }
+
+  setIsProcessing(false);
+};
 
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
