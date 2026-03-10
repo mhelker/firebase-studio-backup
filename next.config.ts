@@ -1,3 +1,4 @@
+// next.config.ts 
 import type { NextConfig } from 'next';
 import path from 'path'; // Import the 'path' module
 

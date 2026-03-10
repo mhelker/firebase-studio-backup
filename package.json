@@ -2,6 +2,7 @@
   "name": "nextn",
   "version": "0.1.0",
   "private": true,
+  "type": "module",
   "scripts": {
     "dev": "next dev -p 9007",
     "genkit:dev": "genkit start --port 4000 --tsx src/ai/dev.ts",
@@ -9,8 +10,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "typecheck": "tsc --noEmit",
-    "export": "next export"
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
@@ -51,7 +51,7 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "date-fns": "^3.6.0",
-    "dotenv": "^16.5.0",
+    "dotenv": "^16.6.1",
     "embla-carousel-react": "^8.6.0",
     "firebase": "^11.8.1",
     "firebase-admin": "^13.5.0",
@@ -59,13 +59,14 @@
     "genkit": "^1.16.1",
     "lodash": "^4.17.21",
     "lucide-react": "^0.475.0",
-    "next": "15.4.10",
+    "next": "^15.5.12",
     "patch-package": "^8.0.0",
     "react": "^18.3.1",
     "react-day-picker": "^8.10.1",
     "react-dom": "^18.3.1",
     "react-hook-form": "^7.54.2",
     "recharts": "^2.15.1",
+    "resend": "^6.9.2",
     "stripe": "^19.1.0",
     "tailwind-merge": "^3.0.1",
     "tailwindcss-animate": "^1.0.7",
@@ -81,6 +82,7 @@
     "handlebars-loader": "^1.7.3",
     "postcss": "^8",
     "tailwindcss": "^3.4.1",
-    "typescript": "^5"
+    "ts-node": "^10.9.2",
+    "typescript": "^5.9.3"
   }
 }
