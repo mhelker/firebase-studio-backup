@@ -10,7 +10,7 @@ import { Menu, Zap, LogIn, LogOut, UserCircle, CalendarDays, Lightbulb } from 'l
 import { useAuth } from '@/contexts/auth-context';
 import { usePathname } from 'next/navigation';
 import { cn } from '@/lib/utils';
-import talentHopIcon from '@/app/logo-main.png';
+const talentHopIcon = '/logo-main.png';
 
 export function Header() {
   const { user, loading, logOut, imageUrl } = useAuth();
@@ -32,7 +32,7 @@ export function Header() {
     <header className="bg-card shadow-md sticky top-0 z-50">
       <div className="container mx-auto px-4 py-4 flex justify-between items-center">
         <Link href="/" className="flex items-center gap-2 text-2xl font-headline font-bold text-primary">
-          <Image src={talentHopIcon} alt="TalentHop Logo" width={125} height={125} />
+          <Image src={talentHopIcon} alt="TalentHop Logo" width={125} height={125} unoptimized />
           <span>TalentHop</span>
         </Link>
         
@@ -110,7 +110,7 @@ export function Header() {
             <SheetContent side="right" className="w-[280px] sm:w-[320px] flex flex-col">
               <SheetHeader className="mb-6 border-b pb-4">
                 <SheetTitle className="text-xl text-primary flex items-center gap-2">
-                   <Image src={talentHopIcon} alt="TalentHop Logo" width={24} height={24} /> TalentHop Menu
+                   <Image src={talentHopIcon} alt="TalentHop Logo" width={24} height={24} unoptimized /> TalentHop Menu
                 </SheetTitle>
               </SheetHeader>
               <nav className="flex flex-col space-y-3 flex-grow">
