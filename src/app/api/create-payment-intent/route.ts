@@ -1,3 +1,4 @@
+// src/app/api/create-payment-intent/route.ts
 import { NextResponse } from "next/server";
 import Stripe from "stripe";
 import { db as adminDb } from "@/lib/firebase-admin";

@@ -35,7 +35,7 @@ export async function releasePayment(bookingId: string) {
 
   // Create transfer from platform → performer
   const transfer = await stripe.transfers.create({
-    amount: Math.round(booking.performerPayout * 100), // payout in cents
+    amount: Math.round((booking.performerPayout || (booking.pricePerHour * 0.85)) * 100), // payout in cents
     currency: "usd",
     destination: performer.stripeAccountId,
     transfer_group: `booking_${bookingId}`,
