@@ -1,3 +1,4 @@
+// functions/src/index.ts
 import * as admin from "firebase-admin";
 import { onSchedule } from "firebase-functions/v2/scheduler";
 import { onDocumentUpdated, onDocumentWritten } from "firebase-functions/v2/firestore";
