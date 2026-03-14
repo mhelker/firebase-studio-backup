@@ -10,7 +10,7 @@ import { Menu, Zap, LogIn, LogOut, UserCircle, CalendarDays, Lightbulb } from 'l
 import { useAuth } from '@/contexts/auth-context';
 import { usePathname } from 'next/navigation';
 import { cn } from '@/lib/utils';
-const talentHopIcon = '/matt.png';
+const talentHopIcon = '/STUDIO-BACKUP-1/matt.png';
 
 export function Header() {
   const { user, loading, logOut, imageUrl } = useAuth();
