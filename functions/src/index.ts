@@ -1,4 +1,5 @@
 // functions/src/index.ts
+import { Resend } from "resend";
 import * as admin from "firebase-admin";
 import { onSchedule } from "firebase-functions/v2/scheduler";
 import { onDocumentUpdated, onDocumentWritten } from "firebase-functions/v2/firestore";
@@ -112,6 +113,123 @@ async function publishReviewsForBooking(
   console.log(`✅ Published public reviews for booking ${bookingId}`);
 }
 
+type NotificationType =
+  | "bookingRequest"
+  | "bookingAccepted"
+  | "bookingDeclined"
+  | "bookingCompleted"
+  | "paymentSucceeded"
+  | "payoutReleased"
+  | "tipReceived"
+  | "reviewReminder";
+
+  // ✅ PASTE RIGHT HERE — EXACTLY HERE
+function buildSubject(type: NotificationType): string {
+  switch (type) {
+    case "bookingRequest":
+      return "New Booking Request 🎤";
+    case "bookingAccepted":
+      return "Booking Accepted ✅";
+    case "bookingDeclined":
+      return "Booking Declined";
+    case "bookingCompleted":
+      return "Booking Completed 🎉";
+    case "paymentSucceeded":
+      return "Payment Received 💳";
+    case "payoutReleased":
+      return "Your payout was released 💰";
+    case "tipReceived":
+      return "You received a tip! ⭐";
+    case "reviewReminder":
+      return "Reminder to leave a review";
+    default:
+      return "TalentHop Notification";
+  }
+}
+
+function buildHtml(type: NotificationType, bookingId: string): string {
+  switch (type) {
+    case "bookingRequest":
+      return `<p>You have a new booking request.</p>`;
+    case "bookingAccepted":
+      return `<p>Your booking was accepted.</p>`;
+    case "bookingDeclined":
+      return `<p>Your booking was declined.</p>`;
+    case "bookingCompleted":
+      return `<p>Your booking is complete.</p>`;
+    case "paymentSucceeded":
+      return `<p>Your payment was successful.</p>`;
+    case "payoutReleased":
+      return `<p>Your payout for booking <b>${bookingId}</b> has been released.</p>`;
+    case "tipReceived":
+      return `<p>You received a tip for booking <b>${bookingId}</b>.</p>`;
+    case "reviewReminder":
+      return `<p>Please remember to leave a review.</p>`;
+    default:
+      return `<p>You have a new notification.</p>`;
+  }
+}
+
+interface SendNotificationParams {
+  type: NotificationType;
+  bookingId: string;
+  recipientUid: string;
+}
+
+async function sendNotification({
+  type,
+  bookingId,
+  recipientUid,
+}: SendNotificationParams) {
+  const userSnap = await db.collection("users").doc(recipientUid).get();
+  if (!userSnap.exists) return;
+
+  const user = userSnap.data();
+  const prefs = user?.notificationPrefs?.[type];
+
+  const emailEnabled = prefs?.email ?? false;
+  const smsEnabled = prefs?.sms ?? false;
+  const pushEnabled = prefs?.push ?? true;
+
+  const notificationId = `${type}_${bookingId}`;
+
+  // In-app notification (push = stored notification)
+  if (pushEnabled) {
+    await db
+      .collection("users")
+      .doc(recipientUid)
+      .collection("notifications")
+      .doc(notificationId)
+      .set(
+        {
+          type,
+          bookingId,
+          read: false,
+          createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        },
+        { merge: true }
+      );
+  }
+
+  if (emailEnabled && user?.email) {
+  const resend = new Resend(process.env.RESEND_API_KEY);
+
+  await resend.emails.send({
+    from: "TalentHop <onboarding@onresend.dev>",
+    to: user.email,
+    subject: buildSubject(type),
+    html: buildHtml(type, bookingId),
+  });
+
+  console.log(`📧 Email sent → ${user.email}`);
+}
+
+  if (smsEnabled && user?.phoneNumber) {
+    console.log(`📱 SMS → ${user.phoneNumber} | ${type} | ${bookingId}`);
+    // integrate Twilio later
+  }
+}
+
 // ---------- 1. Scheduled check for overdue reviews ----------
 export const checkOverdueReviews = onSchedule(
   { schedule: "every 24 hours", region: "us-west2" },
@@ -214,181 +332,112 @@ export const updatePerformerRating = onDocumentWritten(
   }
 );
 
+
 // ---------- 5. Transfer booking payment on performer review ----------
-export const transferOnPerformerReview = onDocumentUpdated(
-  { document: "bookings/{bookingId}", region: "us-west2", secrets: ["STRIPE_SECRET_KEY"] },
+// ... (imports and sendNotification helper stay exactly as you had them)
+
+export const transferPerformerPayouts = onDocumentUpdated(
+  {
+    document: "bookings/{bookingId}",
+    region: "us-west2",
+    secrets: ["STRIPE_SECRET_KEY", "RESEND_API_KEY"],
+  },
   async (event) => {
     const bookingId = event.params.bookingId;
     const after = event.data?.after?.data();
     const before = event.data?.before?.data();
+    
     if (!after || !before) return;
 
-    const performerJustReviewed = !before.performerReviewedCustomer && after.performerReviewedCustomer;
-    const paymentReady = after.paymentStatus === "succeeded" || after.paymentStatus === "pending_release";
-
-    if (!performerJustReviewed || !paymentReady) {
-      console.log(`Skipping transfer for booking ${bookingId}. performerJustReviewed: ${performerJustReviewed}, paymentReady: ${paymentReady}`);
-      return;
-    }
+    const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, { apiVersion: "2024-06-20" });
+    const bookingRef = db.collection("bookings").doc(bookingId);
 
     try {
-      await db.runTransaction(async (tx) => {
-        const bookingRef = db.collection("bookings").doc(bookingId);
-        const bookingSnap = await tx.get(bookingRef);
-        const bookingData = bookingSnap.data();
-        if (!bookingData) throw new Error("Booking data missing");
-
-        if (bookingData.performerPaymentTransferred) {
-          console.log(`Transfer already done for booking ${bookingId}. Exiting.`);
-          return;
-        }
-
-        const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, { apiVersion: "2024-06-20", typescript: true });
-        const performerAccountId = bookingData.performerStripeAccountId;
-        if (!performerAccountId) throw new Error("Performer Stripe account ID missing");
-
-        const paymentIds = Array.isArray(bookingData.processedPayments)
-          ? bookingData.processedPayments
-          : [bookingData.stripePaymentIntentId, bookingData.tipPaymentIntentId].filter(Boolean);
-
-        let transferredPayments = bookingData.transferredPayments || [];
-
-        for (const paymentId of paymentIds) {
-          if (!paymentId || transferredPayments.includes(paymentId)) continue;
-
-          const paymentIntent = await stripe.paymentIntents.retrieve(paymentId);
-          const chargeId = paymentIntent.latest_charge as string;
-          if (!chargeId) continue;
-
-          let amountToTransfer = 0;
-          if (paymentId === bookingData.stripePaymentIntentId) {
-            amountToTransfer = Math.round((bookingData.performerPayout || 0) * 100);
-          } else if (paymentId === bookingData.tipPaymentIntentId) {
-            amountToTransfer = Math.round((bookingData.tipAmount || 0) * 100);
-          }
-
-          if (amountToTransfer <= 0) continue;
-
+      // --- STAGE 1: INITIAL PAYOUT (Triggered by Performer Review) ---
+      // We only move the base money if the Performer has reviewed.
+      const canSendInitial = (after.performerReviewedCustomer || after.performerReviewSubmitted);
+      
+      if (canSendInitial && !after.initialPayoutTransferred && after.performerPayout > 0) {
+        console.log(`Processing Initial Payout for ${bookingId}`);
+        const pi = await stripe.paymentIntents.retrieve(after.stripePaymentIntentId);
+        
+        if (pi.latest_charge) {
           await stripe.transfers.create({
-            amount: amountToTransfer,
+            amount: Math.round(after.performerPayout * 100),
             currency: "usd",
-            destination: performerAccountId,
-            source_transaction: chargeId,
-          }, { idempotencyKey: `transfer-${bookingId}-${paymentId}` });
+            destination: after.performerStripeAccountId,
+            source_transaction: pi.latest_charge as string,
+          });
 
-          transferredPayments.push(paymentId);
-          console.log(`✅ Transferred ${amountToTransfer / 100} USD for payment ${paymentId}`);
+          await bookingRef.update({ 
+            initialPayoutTransferred: true,
+            performerPaymentTransferred: true // syncing both your field names
+          });
+
+          // 🔔 NOTIFICATION: Payout Released
+          await sendNotification({
+            type: "payoutReleased",
+            bookingId,
+            recipientUid: after.performerId
+          });
         }
-
-        // ✅ Update Firestore with both payouts marked as released
-        tx.update(bookingRef, {
-          transferredPayments,
-          performerPaymentTransferred: true,
-          paymentStatus: "transferred",
-          initialPayoutReleased: true,
-          tipPayoutReleased: true,
-          payoutReleasedAt: admin.firestore.FieldValue.serverTimestamp(),
-          tipPayoutReleasedAt: admin.firestore.FieldValue.serverTimestamp(),
-        });
-
-        console.log(`✅ Finished transfers for booking ${bookingId}.`);
-      });
-    } catch (err) {
-      console.error(`❌ Error transferring payment for booking ${bookingId}:`, err);
-    }
-  }
-);
-
-// ---------- 6. Transfer tip on customer review ----------
-export const transferTipOnCustomerReview = onDocumentWritten(
-  { document: "bookings/{bookingId}", region: "us-west2", secrets: ["STRIPE_SECRET_KEY"] },
-  async (event) => {
-    const after = event.data?.after?.data();
-    const before = event.data?.before?.data();
-    if (!after || !before) return;
-
-    const bookingRef = db.collection("bookings").doc(event.params.bookingId);
-    const bookingSnap = await bookingRef.get();
-    const bookingData = bookingSnap.data();
-
-    // ✅ Skip if this tip has already been transferred by transferOnPerformerReview
-    if (bookingData?.transferredPayments?.includes(after.tipPaymentIntentId)) {
-      console.log(`Tip already transferred via transferOnPerformerReview. Skipping.`);
-      return;
-    }
-
-    const customerJustReviewed =
-      after.customerReviewedPerformer && !before.customerReviewedPerformer;
-    if (!customerJustReviewed) return;
-
-    // CRITICAL CHECKS:
-    if (after.tipStatus !== 'succeeded') { // Check for succeeded status from webhook
-        console.log(`Tip for booking ${event.params.bookingId} is not 'succeeded' yet. Skipping tip transfer.`);
-        return;
-    }
-    if (after.tipTransferred) { // Prevent double transfers
-        console.log(`Tip already transferred for booking ${event.params.bookingId}. Skipping.`);
-        return;
-    }
-
-    const { tipAmount, performerId, tipPaymentIntentId } = after;
-    if (tipAmount === undefined || tipAmount <= 0 || !performerId || !tipPaymentIntentId) {
-      if (tipAmount === undefined || tipAmount <= 0) {
-          console.log(`No valid tip amount (${tipAmount}) for transfer. Skipping tip transfer for booking ${event.params.bookingId}.`);
-      } else {
-          console.warn(`Missing data for transferTipOnCustomerReview. PerformerId: ${performerId}, TipPaymentIntentId: ${tipPaymentIntentId}`);
       }
-      return;
-    }
 
-    const performerDoc = await db.collection("performers").doc(performerId).get();
-    const accountId = performerDoc.data()?.stripeAccountId;
-    if (!accountId) {
-      console.error(`Stripe account ID not found for performer ${performerId}. Cannot transfer tip.`);
-      return;
-    }
+      // --- STAGE 2: TIP PAYOUT (Triggered by Customer Review) ---
+      // We only move the tip if the Customer has reviewed AND the performer has reviewed.
+      const canSendTip = (after.customerReviewedPerformer || after.customerReviewSubmitted) && 
+                         (after.performerReviewedCustomer || after.performerReviewSubmitted);
 
-    const stripeSecret = process.env.STRIPE_SECRET_KEY;
-    if (!stripeSecret) {
-      console.error("Stripe secret key is missing inside transferTipOnCustomerReview. This should not happen if secret is configured.");
-      return;
-    }
-    const stripe = new Stripe(stripeSecret, {
-      apiVersion: "2024-06-20",
-      typescript: true,
-    });
+      if (canSendTip && after.tipAmount > 0 && !after.tipPayoutReleased && after.tipPaymentIntentId) {
+        console.log(`Processing Tip Payout for ${bookingId}`);
+        const ti = await stripe.paymentIntents.retrieve(after.tipPaymentIntentId);
+        
+        if (ti.latest_charge) {
+          await stripe.transfers.create({
+            amount: Math.round(after.tipAmount * 100),
+            currency: "usd",
+            destination: after.performerStripeAccountId,
+            source_transaction: ti.latest_charge as string,
+          });
 
-    try {
-        await stripe.transfers.create({
-  amount: Math.round(tipAmount * 100),
-  currency: "usd",
-  destination: accountId,
-  source_transaction: tipPaymentIntentId,
-}, { idempotencyKey: `tip-transfer-${event.params.bookingId}` });
-        console.log(`💸 Tip of ${tipAmount} USD transferred to performer ${performerId} for booking ${event.params.bookingId}`);
+          await bookingRef.update({ 
+            tipPayoutReleased: true, 
+            tipStatus: "released",
+            tipPayoutReleasedAt: admin.firestore.FieldValue.serverTimestamp()
+          });
 
-        // IMPORTANT: Update Firestore after successful transfer
-        // Get existing transferredPayments array or start empty
-let transferredPayments = bookingData?.transferredPayments || [];
+          // 🔔 NOTIFICATION: Tip Received
+          await sendNotification({
+            type: "tipReceived",
+            bookingId,
+            recipientUid: after.performerId
+          });
+        }
+      }
 
-// Skip if already transferred
-if (transferredPayments.includes(after.tipPaymentIntentId)) {
-  console.log(`Tip already transferred via transferOnPerformerReview. Skipping.`);
-  return;
-}
+      // --- FINAL CLOSE-OUT ---
+      // Re-fetch to see if everything is finished
+      const checkSnap = await bookingRef.get();
+      const final = checkSnap.data();
 
-// Add this tip's payment intent
-transferredPayments.push(after.tipPaymentIntentId);
+      const isFullyDone = 
+        final?.initialPayoutTransferred && 
+        (final?.tipAmount > 0 ? final?.tipPayoutReleased : true) &&
+        (final?.customerReviewedPerformer || final?.customerReviewSubmitted) &&
+        (final?.performerReviewedCustomer || final?.performerReviewSubmitted);
 
-// Update booking
-await db.collection('bookings').doc(event.params.bookingId).update({
-  tipTransferred: true,
-  tipStatus: 'transferred',
-  transferredPayments, // now this exists
-});
+      if (isFullyDone && final?.paymentStatus !== "released") {
+        await bookingRef.update({
+          paymentStatus: "released",
+          initialPayoutReleased: true,
+          payoutReleasedAt: admin.firestore.FieldValue.serverTimestamp()
+        });
+        
+        console.log(`✅ Booking ${bookingId} fully released and closed.`);
+      }
 
-} catch (error) {
-        console.error(`❌ Error transferring tip for booking ${event.params.bookingId} to performer ${performerId}:`, error);
+    } catch (err) {
+      console.error(`❌ Stripe/Payout Error for ${bookingId}:`, err);
     }
   }
 );
